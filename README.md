@@ -1,1 +1,1 @@
-# nn-mobile
+# Neural Networks for Mobile Devices
