@@ -18,40 +18,41 @@ def main():
     shutil.copy(src, dst)
     print(f"Copied model source from {src} to {dst}\n")
 
-    # === Append get_model factory to temp_model.py ===
-    factory_code = '''
-
-def get_model():
-    """Factory to instantiate Net with dummy args"""
-    return Net(
-        in_shape=(1,3,224,224),
-        out_shape=(1,1000),
-        prm={"dropout":0.5},
-        device="cpu"
-    )
-'''
-    with open(dst, "a") as f:
-        f.write(factory_code)
-    print("Appended get_model factory to temp_model.py\n")
-
     # === Step 2: Dynamically load temp_model.py ===
     spec = importlib.util.spec_from_file_location("model_mod", dst)
     mod  = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    # === Step 3: Inspect & instantiate Net via get_model() ===
-    if hasattr(mod, "get_model"):
-        model = mod.get_model()
-    else:
-        raise RuntimeError("get_model factory not found in temp_model.py")
-    model.eval()
-    print("Model instantiated via get_model() successfully!\n")
+    # === Step 3: Inspect & instantiate Net ===
+    NetClass = None
+    for name, obj in inspect.getmembers(mod, inspect.isclass):
+        if name == "Net":
+            NetClass = obj
+            break
+    if NetClass is None:
+        raise RuntimeError("Couldn't find class 'Net' in temp_model.py")
 
-    # === Step 4: Convert via CLI ===
+    print("Net signature:", inspect.signature(NetClass))
+
+    # Dummy args matching (in_shape, out_shape, prm, device)
+    in_shape  = (1, 3, 224, 224)
+    out_shape = (1, 1000)
+    prm       = {"dropout": 0.5}
+    device    = "cpu"
+
+    # Instantiate
+    try:
+        model = NetClass(in_shape=in_shape, out_shape=out_shape, prm=prm, device=device)
+    except TypeError:
+        model = NetClass(in_shape, out_shape, prm, device)
+    model.eval()
+    print("Model instantiated successfully!\n")
+
+    # === Step 4: Convert via the CLI ===
     cmd = (
         "python ab/lite/torch2tflite.py "
         f"--model-script {dst} "
-        "--class-name Net "  # class-name ignored since get_model used
+        "--class-name Net "
         "--output ./model.tflite "
         "--input-shape 1,3,224,224"
     )
@@ -61,7 +62,7 @@ def get_model():
     print("Conversion complete: model.tflite created.\n")
 
     # === Step 5: Dummy inference in PyTorch ===
-    dummy = torch.randn(1, 3, 224, 224)
+    dummy = torch.randn(*in_shape)
     with torch.no_grad():
         pt_out = model(dummy).numpy()
     print("PyTorch output (first 5):", pt_out.flatten()[:5], "\n")
@@ -78,4 +79,3 @@ def get_model():
 
 if __name__ == "__main__":
     main()
-
