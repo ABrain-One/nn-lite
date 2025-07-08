@@ -1,97 +1,60 @@
-# Copyright 2025 by Andrey Ignatov. All Rights Reserved.
-
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
-import torch.nn as nn
+import sys
 import torch
-
-# Install ai_edge_torch_plugin
-# https://pypi.org/project/ai-edge-torch/
-# This plugin is developed by TFLite team and allows direct Torch to TFLite model conversion
-# Note: this plugin is available only for Linux systems.
-# However, it works perfectly under Windows WSL2; simply create a new conda environment
-# and install this package along with torch / torchvision libs
-
+import argparse
+from pathlib import Path
+import importlib
 import ai_edge_torch
 
-
-def conv_conv(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, 3, padding=1), nn.ReLU(),
-        nn.Conv2d(out_channels, out_channels, 3, padding=1), nn.ReLU()
-    )
+# If we run pipeline with nn-dataset models path it is providing the .tflite file which is executable to mobile. python torch2tflite.py \  --model AlexNet \  --nn-dataset-path /home/saif/lab/nn-dataset \  --output ./tflites/alexnet.tflite
 
 
-def conv_conv_2(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, 3, padding=1), nn.ReLU(),
-        nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=2), nn.ReLU()
-    )
+# === CLI ARGUMENTS ===
+parser = argparse.ArgumentParser(description="Convert a PyTorch model from nn-dataset to TFLite format")
+parser.add_argument("--model", type=str, required=True, help="Model name from nn-dataset (e.g., AlexNet, ResNet18)")
+parser.add_argument("--output", type=str, default="model.tflite", help="Output path for .tflite file")
+parser.add_argument("--nn-dataset-path", type=str, required=True, help="Path to nn-dataset repository")
+args = parser.parse_args()
 
+# === ADD nn-dataset TO PATH ===
+sys.path.insert(0, args.nn_dataset_path)
 
-class UNet(nn.Module):
+# === IMPORT MODEL ===
+try:
+    model_module = importlib.import_module(f"ab.nn.nn.{args.model}")
+    Net = getattr(model_module, "Net")
+except (ImportError, AttributeError) as e:
+    print(f"[ERROR] Could not import model '{args.model}' from nn-dataset: {e}")
+    sys.exit(1)
 
-    def __init__(self):
-        super().__init__()
+# === INSTANTIATE MODEL ===
+in_shape = (1, 3, 224, 224)
+out_shape = (1000,)
+prm = {
+    'dropout': False,
+    'batch_norm': False,
+    'activation': 'relu'
+}
+device = torch.device("cpu")
 
-        self.down_1 = conv_conv_2(3, 16)
-        self.down_2 = conv_conv_2(16, 32)
-        self.down_3 = conv_conv_2(32, 64)
-        self.down_4 = conv_conv_2(64, 128)
-
-        self.bottom = conv_conv(128, 128)
-
-        self.up_1 = conv_conv(128, 64)
-        self.up_2 = conv_conv(64, 32)
-        self.up_3 = conv_conv(32, 16)
-
-        self.conv_final = nn.Conv2d(16, 3, 1, padding=0)
-
-        self.upsample_0 = torch.nn.Upsample(scale_factor=2)
-        self.upsample_1 = torch.nn.Upsample(scale_factor=2)
-        self.upsample_2 = torch.nn.Upsample(scale_factor=2)
-        self.upsample_3 = torch.nn.Upsample(scale_factor=2)
-
-        self.max_pool = nn.MaxPool2d(2)
-
-    def forward(self, x):
-        x = self.down_1(x)
-        x = self.down_2(x)
-        x = self.down_3(x)
-        x = self.down_4(x)
-
-        x = self.upsample_0(self.bottom(x))
-        x = self.upsample_1(self.up_1(x))
-        x = self.upsample_2(self.up_2(x))
-        x = self.upsample_3(self.up_3(x))
-
-        return self.conv_final(x)
-
-
-def convert_to_tflite(model: nn.Module, input_tensor: torch.Tensor, out_path: str):
-    """
-    Converts a PyTorch model to TFLite using ai_edge_torch and exports to the specified path.
-    """
-    # Ensure model is in evaluation mode
+try:
+    model = Net(in_shape, out_shape, prm, device)
     model.eval()
-    # ai_edge_torch.convert expects inputs as a tuple
-    edge_model = ai_edge_torch.convert(model, (input_tensor,))
-    # Export the TFLite model
-    edge_model.export(out_path)
+except Exception as e:
+    print(f"[ERROR] Failed to instantiate model '{args.model}': {e}")
+    sys.exit(1)
 
+# === CONVERT TO TFLITE ===
+try:
+    sample_input = torch.randn(*in_shape)
+    edge_model = ai_edge_torch.convert(model, (sample_input,))
 
-if __name__ == '__main__':
-    # Creating / loading pre-trained UNet model
-    model = UNet()
-    model.eval()
+    output_path = Path(args.output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Exporting to {output_path}")
 
-    # Make test run
-    prediction = model(torch.randn(1, 3, 720, 1280))
-    print(prediction)
-
-    # Converting model to TFLite
-    sample_input = torch.randn(1, 3, 720, 1280)
-    print(f"Converting UNet to TFLite at 'unet.tflite'...")
-    convert_to_tflite(model, sample_input, "unet.tflite")
-    print("✅ TFLite model exported: unet.tflite")
+    edge_model.export(str(output_path))
+    print(f"[SUCCESS] TFLite model exported to {output_path}")
+except Exception as e:
+    print(f"[ERROR] TFLite export failed: {e}")
+    sys.exit(1)
