@@ -1,81 +1,97 @@
-#!/usr/bin/env python3
+# Copyright 2025 by Andrey Ignatov. All Rights Reserved.
 
 import os
-import shutil
-import importlib.util
-import inspect
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
+import torch.nn as nn
 import torch
-import numpy as np
-import tensorflow as tf
 
-from ab.nn.util.Const import model_script
+# Install ai_edge_torch_plugin
+# https://pypi.org/project/ai-edge-torch/
+# This plugin is developed by TFLite team and allows direct Torch to TFLite model conversion
+# Note: this plugin is available only for Linux systems.
+# However, it works perfectly under Windows WSL2; simply create a new conda environment
+# and install this package along with torch / torchvision libs
 
-def main():
-    # === Step 1: Copy AlexNet source to temp_model.py ===
-    src = model_script("AlexNet")
-    dst = "temp_model.py"
-    shutil.copy(src, dst)
-    print(f"Copied model source from {src} to {dst}\n")
+import ai_edge_torch
 
-    # === Append get_model factory to temp_model.py ===
-    factory_code = '''
 
-def get_model():
-    """Factory to instantiate Net with dummy args"""
-    return Net(
-        in_shape=(1,3,224,224),
-        out_shape=(1,1000),
-        prm={"dropout":0.5},
-        device="cpu"
+def conv_conv(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, 3, padding=1), nn.ReLU(),
+        nn.Conv2d(out_channels, out_channels, 3, padding=1), nn.ReLU()
     )
-'''
-    with open(dst, "a") as f:
-        f.write(factory_code)
-    print("Appended get_model factory to temp_model.py\n")
 
-    # === Step 2: Dynamically load temp_model.py ===
-    spec = importlib.util.spec_from_file_location("model_mod", dst)
-    mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
-    # === Step 3: Inspect & instantiate Net via get_model() ===
-    if hasattr(mod, "get_model"):
-        model = mod.get_model()
-    else:
-        raise RuntimeError("get_model factory not found in temp_model.py")
+def conv_conv_2(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, 3, padding=1), nn.ReLU(),
+        nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=2), nn.ReLU()
+    )
+
+
+class UNet(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.down_1 = conv_conv_2(3, 16)
+        self.down_2 = conv_conv_2(16, 32)
+        self.down_3 = conv_conv_2(32, 64)
+        self.down_4 = conv_conv_2(64, 128)
+
+        self.bottom = conv_conv(128, 128)
+
+        self.up_1 = conv_conv(128, 64)
+        self.up_2 = conv_conv(64, 32)
+        self.up_3 = conv_conv(32, 16)
+
+        self.conv_final = nn.Conv2d(16, 3, 1, padding=0)
+
+        self.upsample_0 = torch.nn.Upsample(scale_factor=2)
+        self.upsample_1 = torch.nn.Upsample(scale_factor=2)
+        self.upsample_2 = torch.nn.Upsample(scale_factor=2)
+        self.upsample_3 = torch.nn.Upsample(scale_factor=2)
+
+        self.max_pool = nn.MaxPool2d(2)
+
+    def forward(self, x):
+        x = self.down_1(x)
+        x = self.down_2(x)
+        x = self.down_3(x)
+        x = self.down_4(x)
+
+        x = self.upsample_0(self.bottom(x))
+        x = self.upsample_1(self.up_1(x))
+        x = self.upsample_2(self.up_2(x))
+        x = self.upsample_3(self.up_3(x))
+
+        return self.conv_final(x)
+
+
+def convert_to_tflite(model: nn.Module, input_tensor: torch.Tensor, out_path: str):
+    """
+    Converts a PyTorch model to TFLite using ai_edge_torch and exports to the specified path.
+    """
+    # Ensure model is in evaluation mode
     model.eval()
-    print("Model instantiated via get_model() successfully!\n")
+    # ai_edge_torch.convert expects inputs as a tuple
+    edge_model = ai_edge_torch.convert(model, (input_tensor,))
+    # Export the TFLite model
+    edge_model.export(out_path)
 
-    # === Step 4: Convert via CLI ===
-    cmd = (
-        "python ab/lite/torch2tflite.py "
-        f"--model-script {dst} "
-        "--class-name Net "  # class-name ignored since get_model used
-        "--output ./model.tflite "
-        "--input-shape 1,3,224,224"
-    )
-    print("Running conversion command:\n ", cmd, "\n")
-    if os.system(cmd) != 0:
-        raise RuntimeError("Error: Conversion to TFLite failed")
-    print("Conversion complete: model.tflite created.\n")
 
-    # === Step 5: Dummy inference in PyTorch ===
-    dummy = torch.randn(1, 3, 224, 224)
-    with torch.no_grad():
-        pt_out = model(dummy).numpy()
-    print("PyTorch output (first 5):", pt_out.flatten()[:5], "\n")
+if __name__ == '__main__':
+    # Creating / loading pre-trained UNet model
+    model = UNet()
+    model.eval()
 
-    # === Step 6: Dummy inference in TFLite ===
-    interpreter = tf.lite.Interpreter(model_path="./model.tflite")
-    interpreter.allocate_tensors()
-    i = interpreter.get_input_details()[0]["index"]
-    o = interpreter.get_output_details()[0]["index"]
-    interpreter.set_tensor(i, dummy.numpy().astype(np.float32))
-    interpreter.invoke()
-    tf_out = interpreter.get_tensor(o)
-    print("TFLite output  (first 5):", tf_out.flatten()[:5], "\n")
+    # Make test run
+    prediction = model(torch.randn(1, 3, 720, 1280))
+    print(prediction)
 
-if __name__ == "__main__":
-    main()
-
+    # Converting model to TFLite
+    sample_input = torch.randn(1, 3, 720, 1280)
+    print(f"Converting UNet to TFLite at 'unet.tflite'...")
+    convert_to_tflite(model, sample_input, "unet.tflite")
+    print("✅ TFLite model exported: unet.tflite")
