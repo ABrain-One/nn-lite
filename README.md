@@ -13,7 +13,7 @@ For Windows:
    .venv\Scripts\activate
    ```
 
-Installing/Updating NN Dataset from GitHub:
+## Installing/Updating NN Dataset from GitHub:
 ```bash
 rm -rf db
 pip uninstall -y nn-dataset
