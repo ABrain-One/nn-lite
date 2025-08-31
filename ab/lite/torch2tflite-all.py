@@ -1,80 +1,106 @@
-import os
 import sys
 import torch
 import argparse
-import json
 from pathlib import Path
 import importlib
 import ai_edge_torch
+from ab.nn.api import data
 
-# === CLI ARGUMENTS ===
-parser = argparse.ArgumentParser(description="Convert a PyTorch model from nn-dataset to TFLite for each JSON config entry")
-parser.add_argument("--model", type=str, required=True, help="Model name from nn-dataset (e.g., AlexNet)")
-parser.add_argument("--nn-dataset-path", type=str, required=True, help="Path to nn-dataset repository root")
-parser.add_argument("--config-json", type=str, required=True, help="Path to the JSON array file with training configs")
-parser.add_argument("--num-classes", type=int, default=100, help="Number of output classes")
-parser.add_argument("--output", type=str, required=True, help="Output file path (used as prefix for each accuracy)")
-args = parser.parse_args()
+# --- NHWC wrapper ---
+class NHWCWrapper(torch.nn.Module):
+    """
+    Wraps a PyTorch model to handle NHWC to NCHW format conversion for TFLite.
+    """
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+    def forward(self, x):
+        # NHWC -> NCHW
+        x = x.permute(0, 3, 1, 2).contiguous()
+        return self.model(x)
 
-# === LOAD CONFIG JSON ARRAY ===
-cfg_path = Path(args.config_json)
-if not cfg_path.exists():
-    print(f"[ERROR] Config JSON not found: {cfg_path}")
-    sys.exit(1)
-with open(cfg_path, 'r') as f:
-    configs = json.load(f)
-if not isinstance(configs, list) or not configs:
-    print(f"[ERROR] Expected a non-empty list in {cfg_path}")
-    sys.exit(1)
+def get_model_configs(model_name: str, num_files: int = 10):
+    """Queries the database for a specific model and returns the fastest configurations."""
+    df = data(f"nn == '{model_name}'")
+    if df.empty:
+        raise ValueError(f"No entries found for model '{model_name}'")
 
-# Prepare output directory and base name
-out_path = Path(args.output)
-out_dir = out_path.parent
-base = out_path.stem  # filename without extension
-out_dir.mkdir(parents=True, exist_ok=True)
+    df_sorted = df.sort_values("duration")
+    return df_sorted.head(num_files)
 
-# Setup model import
-sys.path.insert(0, args.nn_dataset_path)
-try:
-    model_module = importlib.import_module(f"ab.nn.nn.{args.model}")
-    Net = getattr(model_module, "Net")
-except Exception as e:
-    print(f"[ERROR] Could not import model '{args.model}': {e}")
-    sys.exit(1)
+def convert_and_export(row, num_classes: int, output_dir: Path):
+    """
+    Instantiates, wraps, and exports a single model configuration to a TFLite file.
+    """
+    prm = row["prm"]
+    model_name_from_db = row["nn"]
+    idx = row.name  # Get the unique index from the DataFrame row
 
-# Iterate and export per config
-for cfg in configs:
-    acc = cfg.get('accuracy', 0)
-    batch = cfg.get('batch', 1)
-    dropout = cfg.get('dropout', 0.0)
-    lr = cfg.get('lr', 0.0)
-    momentum = cfg.get('momentum', 0.0)
-    transform = cfg.get('transform', '')
     try:
-        size = int(transform.split('_')[-1])
-    except:
+        size = int(str(prm.get("transform", "")).split("_")[-1])
+    except Exception:
         size = 224
+
+    batch = int(prm.get("batch", 1))
     in_shape = (batch, 3, size, size)
-    out_shape = (batch, args.num_classes)
-    prm = {'dropout': dropout, 'lr': lr, 'momentum': momentum, 'transform': transform}
+    out_shape = (batch, num_classes)
     device = torch.device("cpu")
 
+    # Dynamically import the model module and class
+    sys.path.insert(0, ".") # Add current directory to path
     try:
-        model = Net(in_shape, out_shape, prm, device)
-        model.eval()
-        print(f"[{acc:.4f}] Instantiated {args.model} with in_shape={in_shape}")
+        module = importlib.import_module(f"ab.nn.nn.{model_name_from_db}")
+        Net = getattr(module, "Net")
     except Exception as e:
-        print(f"[ERROR] Failed instantiate for acc {acc}: {e}")
-        continue
+        print(f"[ERROR] Could not import model '{model_name_from_db}': {e}")
+        return
 
     try:
-        sample = torch.randn(*in_shape)
-        edge_model = ai_edge_torch.convert(model, (sample,))
-        file_name = f"{base}_{acc:.4f}.tflite"
-        save_path = out_dir / file_name
-        print(f"Exporting acc {acc:.4f} → {save_path}")
-        edge_model.export(str(save_path))
-        print(f"[SUCCESS] {save_path}")
+        # Instantiate model (passing correct arguments from the database)
+        model_instance = Net(in_shape, out_shape, prm, device)
+        model_instance.eval()
+        model = NHWCWrapper(model_instance)
+        model.eval()
     except Exception as e:
-        print(f"[ERROR] Export failed for acc {acc}: {e}")
-        continue
+        print(f"[ERROR] Failed to instantiate model for config {idx}: {e}")
+        return
+
+    # Create dummy NHWC input
+    sample = torch.randn(batch, size, size, 3, dtype=torch.float32)
+
+    # Convert and export using a unique filename
+    output_file = output_dir / f"{model_name_from_db}_{idx}.tflite"
+    try:
+        edge_model = ai_edge_torch.convert(model, (sample,))
+        edge_model.export(str(output_file))
+        print(f"[SUCCESS] TFLite saved -> {output_file}")
+    except Exception as e:
+        print(f"[ERROR] Export failed for config {idx}: {e}")
+
+def main():
+    """Main execution pipeline."""
+    # === CLI ARGUMENTS ===
+    parser = argparse.ArgumentParser(description="Convert a PyTorch model from nn-dataset to TFLite (Android-ready NHWC).")
+    parser.add_argument("model", type=str, help="Model name from nn-dataset (e.g., AlexNet)")
+    
+    args = parser.parse_args()
+
+    model_name = args.model
+    # The number of classes is hardcoded since it cannot be determined from the database.
+    num_classes = 1000 
+    output_dir = Path(f'./exports/{model_name}')
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        print(f"Searching for up to 10 configurations for model '{model_name}'...")
+        model_configs = get_model_configs(model_name)
+        for _, row in model_configs.iterrows():
+            convert_and_export(row, num_classes, output_dir)
+        print(f"Generated {len(model_configs)} TFLite files.")
+
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
