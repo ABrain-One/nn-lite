@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import stat
 from pathlib import Path
 from ab.nn.api import check_nn, data
 import importlib.util, torch, ai_edge_torch
@@ -11,14 +12,28 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 
 # Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+sys.path.insert(0, project_root)
 
 tflite_dir = Path('./exports_tflite')
 tflite_dir.mkdir(parents=True, exist_ok=True)
 
-# Create directory for JSON files
-json_base_dir = Path('../../ab/nn/stat/train')
-json_base_dir.mkdir(parents=True, exist_ok=True)
+# Create directory for JSON files in the project path with proper permissions
+json_base_dir = Path(project_root) / 'ab/nn/stat/train'
+
+
+def ensure_directory_exists(path):
+    """Ensure directory exists with proper permissions for all users"""
+    if not path.exists():
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            # Set permissions to allow all users to read, write, and execute
+            path.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+        except PermissionError as e:
+            print(f"Error creating directory {path}: {e}")
+            print("Please ensure you have write permissions for the project directory")
+            return False
+    return True
 
 
 def find_tmp_model_file(model_name: str, prefix: str):
@@ -69,9 +84,14 @@ def convert_to_serializable(obj):
 
 
 def train_and_export_tflite(model_name: str, min_files: int = 10):
+    # Ensure base directory exists with proper permissions
+    if not ensure_directory_exists(json_base_dir):
+        return []
+
     # Create model-specific JSON directory
     json_model_dir = json_base_dir / model_name
-    json_model_dir.mkdir(parents=True, exist_ok=True)
+    if not ensure_directory_exists(json_model_dir):
+        return []
 
     df = data(f"nn == '{model_name}'")
     if df.empty:
@@ -106,9 +126,15 @@ def train_and_export_tflite(model_name: str, min_files: int = 10):
         
         # Create JSON file with incremental numbering
         json_file = json_model_dir / f"{file_counter}.json"
-        with open(json_file, 'w') as f:
-            json.dump([duration_data], f, indent=4)
-        print(f"[SUCCESS] Saved JSON → {json_file}")
+        try:
+            with open(json_file, 'w') as f:
+                json.dump([duration_data], f, indent=4)
+            # Set permissions to allow all users to read and write
+            json_file.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH)
+            print(f"[SUCCESS] Saved JSON → {json_file}")
+        except PermissionError as e:
+            print(f"Permission denied when writing to {json_file}: {e}")
+            continue
         
         # Increment counter for next file
         file_counter += 1
@@ -196,6 +222,7 @@ def main():
     try:
         files = train_and_export_tflite(model_name, min_files=min_files)
         print(f"Generated {len(files)} TFLite files in {tflite_dir}")
+        print(f"JSON files saved in {json_base_dir / model_name}")
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
