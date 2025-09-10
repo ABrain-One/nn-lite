@@ -15,25 +15,18 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.File
 import kotlin.math.max
+import kotlin.system.measureTimeMillis
 
 class MainActivity : AppCompatActivity() {
-
-    private var classifier: TFLiteClassifier? = null
 
     private lateinit var ivQuery: ImageView
     private lateinit var tv: TextView
     private lateinit var btn: Button
     private lateinit var progress: ProgressBar
 
-    private lateinit var nearestTitle: TextView
-    private lateinit var nearestPreview: ImageView
-    private lateinit var nearestCaption: TextView
-
-    // Your embedding model in assets/
-    private val modelFile = "dpn107_model_0.1204.tflite"
-
-    // 🔹 Your drawables in res/drawable
     private val galleryResIds: List<Int> = listOf(
         R.drawable.car,
         R.drawable.cat,
@@ -41,9 +34,6 @@ class MainActivity : AppCompatActivity() {
         R.drawable.su30,
         R.drawable.su34
     )
-
-    private val index = EmbeddingIndex(dim = 512)
-    private val labelToRes = mutableMapOf<String, Int>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,112 +44,53 @@ class MainActivity : AppCompatActivity() {
         btn = findViewById(R.id.runButton)
         progress = findViewById(R.id.progress)
 
-        nearestTitle = findViewById(R.id.nearestTitle)
-        nearestPreview = findViewById(R.id.nearestPreview)
-        nearestCaption = findViewById(R.id.nearestCaption)
-
-        // Use the first gallery image as the query image
-        val queryResId: Int = galleryResIds.first()
-        val queryBmp = decodeResBitmapSafe(queryResId, reqMaxDim = 512)
+        val queryResId = galleryResIds.first()
+        val queryBmp = decodeResBitmapSafe(queryResId, 512)
             ?: run { tv.text = "Failed to decode query image."; btn.isEnabled = false; return }
 
         ivQuery.setImageBitmap(queryBmp)
 
-        // Init model
-        try {
-            classifier = TFLiteClassifier(
-                context = this,
-                modelPath = modelFile,
-                numThreads = 1,
-                useNNAPI = false
-            )
-            tv.text = "Model loaded (embedding mode)."
-        } catch (e: Throwable) {
-            tv.text = "Model init failed: ${e.message}"
-            btn.isEnabled = false
-            return
-        }
-
-        // Build the gallery index — IMPORTANT: skip the query image
-        lifecycleScope.launch {
-            progress.isVisible = true
-            tv.append("\nBuilding gallery index…")
-            val added = withContext(Dispatchers.Default) {
-                var count = 0
-                val c = classifier!!
-                for (resId in galleryResIds.filter { it != queryResId }) {
-                    try {
-                        decodeResBitmapSafe(resId, reqMaxDim = 512)?.let { bmp ->
-                            val vec = c.embed(bmp) // L2-normalized 512-d
-                            val label = labelFor(resId)
-                            index.add(label, vec)
-                            labelToRes[label] = resId
-                            bmp.recycle()
-                            count++
-                        }
-                    } catch (t: Throwable) {
-                        Log.e("MainActivity", "Index add failed for ${labelFor(resId)}", t)
-                    }
-                }
-                count
-            }
-            tv.append("\nIndex ready. Items=$added")
-            progress.isVisible = false
-        }
-
         btn.setOnClickListener {
-            val c = classifier ?: return@setOnClickListener
-            progress.isVisible = true
             btn.isEnabled = false
-            tv.append("\nRunning inference…")
+            tv.text = ""
+            progress.isVisible = true
 
             lifecycleScope.launch {
-                try {
-                    val (vec, top) = withContext(Dispatchers.Default) {
-                        val v = c.embed(queryBmp)
-                        val matches = if (index.size() > 0) index.query(v, topK = 5) else emptyList()
-                        v to matches
-                    }
-
-                    val preview = vec.take(8).joinToString(", ") { "%.4f".format(it) }
-                    val knnText = buildString {
-                        appendLine("\nNearest in gallery (cosine):")
-                        top.forEachIndexed { i, (label, cos) ->
-                            appendLine("${i + 1}. $label   cos=${"%.4f".format(cos)}")
+                val modelFiles = assets.list("")?.filter { it.endsWith(".tflite") } ?: emptyList()
+                for (modelName in modelFiles) {
+                    try {
+                        val duration = measureTimeMillis {
+                            val classifier = TFLiteClassifier(this@MainActivity, modelName)
+                            classifier.embed(queryBmp)
+                            classifier.close()
                         }
-                    }
-                    tv.append("\nEmbedding L2-normed, dim=${vec.size}\nfirst 8: [ $preview ]$knnText")
 
-                    // Show top-1 nearest (now it cannot be the same image)
-                    if (top.isNotEmpty()) {
-                        val (bestLabel, bestCos) = top.first()
-                        val resId = labelToRes[bestLabel]
-                        nearestTitle.isVisible = true
-                        nearestCaption.isVisible = true
-                        if (resId != null) {
-                            nearestPreview.isVisible = true
-                            nearestPreview.setImageResource(resId)
-                            nearestCaption.text = "$bestLabel   cos=${"%.4f".format(bestCos)}"
-                        } else {
-                            nearestPreview.isVisible = false
-                            nearestCaption.text = "Nearest: $bestLabel   cos=${"%.4f".format(bestCos)} (no drawable found)"
+                        // Create JSON for this model
+                        val json = JSONObject().apply {
+                            put("model_name", modelName)
+                            put("duration_ms", duration)
                         }
-                    } else {
-                        nearestTitle.isVisible = false
-                        nearestPreview.isVisible = false
-                        nearestCaption.isVisible = true
-                        nearestCaption.text = "No nearest result."
+
+                        val jsonFileName = "${modelName.removeSuffix(".tflite")}.json"
+                        openFileOutput(jsonFileName, MODE_PRIVATE).use { it.write(json.toString().toByteArray()) }
+
+                        // Update UI
+                        tv.append("\nmodel name: $modelName")
+                        tv.append("\nsuccessfully executed: Yes")
+                        tv.append("\nJSON file has been created successfully\n")
+
+                    } catch (e: Throwable) {
+                        Log.e("MainActivity", "Error executing $modelName", e)
+                        tv.append("\nmodel name: $modelName")
+                        tv.append("\nsuccessfully executed: No")
+                        tv.append("\nError: ${e.message}\n")
                     }
-                } finally {
-                    progress.isVisible = false
-                    btn.isEnabled = true
                 }
+                progress.isVisible = false
+                btn.isEnabled = true
             }
         }
     }
-
-    private fun labelFor(@DrawableRes resId: Int): String =
-        runCatching { resources.getResourceEntryName(resId) }.getOrElse { "res_$resId" }
 
     private fun decodeResBitmapSafe(@DrawableRes resId: Int, reqMaxDim: Int = 512): Bitmap? {
         return try {
@@ -174,9 +105,5 @@ class MainActivity : AppCompatActivity() {
             BitmapFactory.decodeResource(resources, resId, opt2)
         } catch (_: Throwable) { null }
     }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        classifier?.close()
-    }
 }
+// Create JSON for this model
