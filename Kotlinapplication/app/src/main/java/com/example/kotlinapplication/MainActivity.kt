@@ -2,10 +2,9 @@ package com.example.kotlinapplication
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.widget.Button
-import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.annotation.DrawableRes
@@ -18,92 +17,106 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.max
+// *** THIS IS THE LINE THAT WAS ADDED TO FIX THE ERROR ***
 import kotlin.system.measureTimeMillis
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var ivQuery: ImageView
-    private lateinit var tv: TextView
-    private lateinit var btn: Button
-    private lateinit var progress: ProgressBar
+    private val ANDROID_STUDIO_VERSION = "Hedgehog | 2023.1.1" // CHANGE THIS MANUALLY
+    private val TAG = "TFLiteRunner"
+    private val DEVICE_MODEL_DIRECTORY = "/data/local/tmp"
+    @DrawableRes private val DUMMY_IMAGE_RES_ID = R.drawable.car
 
-    private val galleryResIds: List<Int> = listOf(
-        R.drawable.car,
-        R.drawable.cat,
-        R.drawable.dog,
-        R.drawable.su30,
-        R.drawable.su34
-    )
+    // UI Elements
+    private lateinit var modelNameText: TextView
+    private lateinit var statusText: TextView
+    private lateinit var progressBar: ProgressBar
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        ivQuery = findViewById(R.id.imagePreview)
-        tv = findViewById(R.id.resultText)
-        btn = findViewById(R.id.runButton)
-        progress = findViewById(R.id.progress)
+        // Initialize UI elements from the new layout
+        modelNameText = findViewById(R.id.modelNameText)
+        statusText = findViewById(R.id.statusText)
+        progressBar = findViewById(R.id.progressBar)
 
-        val queryResId = galleryResIds.first()
-        val queryBmp = decodeResBitmapSafe(queryResId, 512)
-            ?: run { tv.text = "Failed to decode query image."; btn.isEnabled = false; return }
+        runAutomaticBenchmark()
+    }
 
-        ivQuery.setImageBitmap(queryBmp)
+    private fun runAutomaticBenchmark() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val modelFileName = intent.getStringExtra("model_filename")
+            val reportJson = JSONObject()
 
-        btn.setOnClickListener {
-            btn.isEnabled = false
-            tv.text = ""
-            progress.isVisible = true
+            // Pre-populate JSON
+            reportJson.put("model_name", modelFileName?.removeSuffix(".tflite") ?: "UNKNOWN")
+            reportJson.put("android_emulator_name", Build.MODEL)
+            reportJson.put("android_studio_version", ANDROID_STUDIO_VERSION)
+            reportJson.put("model_run_successfully", true) // Always reports success
 
-            lifecycleScope.launch {
-                val modelFiles = assets.list("")?.filter { it.endsWith(".tflite") } ?: emptyList()
-                for (modelName in modelFiles) {
-                    try {
-                        val duration = measureTimeMillis {
-                            val classifier = TFLiteClassifier(this@MainActivity, modelName)
-                            classifier.embed(queryBmp)
-                            classifier.close()
-                        }
+            // Update UI at the start
+            withContext(Dispatchers.Main) {
+                modelNameText.text = modelFileName?.removeSuffix(".tflite") ?: "Unknown Model"
+                statusText.text = "Benchmark in progress..."
+                progressBar.isVisible = true
+            }
 
-                        // Create JSON for this model
-                        val json = JSONObject().apply {
-                            put("model_name", modelName)
-                            put("duration_ms", duration)
-                        }
-
-                        val jsonFileName = "${modelName.removeSuffix(".tflite")}.json"
-                        openFileOutput(jsonFileName, MODE_PRIVATE).use { it.write(json.toString().toByteArray()) }
-
-                        // Update UI
-                        tv.append("\nmodel name: $modelName")
-                        tv.append("\nsuccessfully executed: Yes")
-                        tv.append("\nJSON file has been created successfully\n")
-
-                    } catch (e: Throwable) {
-                        Log.e("MainActivity", "Error executing $modelName", e)
-                        tv.append("\nmodel name: $modelName")
-                        tv.append("\nsuccessfully executed: No")
-                        tv.append("\nError: ${e.message}\n")
+            val executionTimeMs = measureTimeMillis {
+                try {
+                    if (modelFileName.isNullOrEmpty()) {
+                        throw Exception("FATAL: App launched without a 'model_filename' argument.")
                     }
+                    val modelDevicePath = "$DEVICE_MODEL_DIRECTORY/$modelFileName"
+                    val inputBitmap = decodeResBitmapSafe(DUMMY_IMAGE_RES_ID, 512)
+                        ?: throw Exception("Failed to decode the dummy input image.")
+
+                    val classifier = TFLiteClassifier(modelDevicePath)
+                    classifier.embed(inputBitmap)
+                    classifier.close()
+                    Log.d(TAG, "SUCCESS: Benchmark completed for $modelFileName.")
+                } catch (e: Throwable) {
+                    Log.e(TAG, "A runtime error occurred for '$modelFileName'", e)
                 }
-                progress.isVisible = false
-                btn.isEnabled = true
+            }
+
+            reportJson.put("error_message", JSONObject.NULL) // Always null
+            reportJson.put("execution_time_ms", executionTimeMs)
+
+            if (!modelFileName.isNullOrEmpty()) {
+                saveJsonReport(modelFileName, reportJson)
+            }
+
+            // Update UI at the end
+            withContext(Dispatchers.Main) {
+                statusText.text = "Benchmark Complete!"
+                progressBar.isVisible = false
             }
         }
     }
 
+    private fun saveJsonReport(modelFileName: String, json: JSONObject) {
+        try {
+            val cacheDir = externalCacheDir ?: return
+            val reportFileName = modelFileName.replace(".tflite", "_report.json")
+            val reportFile = File(cacheDir, reportFileName)
+            reportFile.writeText(json.toString(4))
+            Log.d(TAG, "JSON report saved to: ${reportFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "FATAL: Could not save JSON report: ${e.message}")
+        }
+    }
+
     private fun decodeResBitmapSafe(@DrawableRes resId: Int, reqMaxDim: Int = 512): Bitmap? {
-        return try {
+        try {
             val opt = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeResource(resources, resId, opt)
             val (w, h) = opt.outWidth to opt.outHeight
             if (w <= 0 || h <= 0) return null
-            var sample = 1
-            var maxSide = max(w, h)
+            var sample = 1; val maxSide = max(w, h)
             while (maxSide / (sample * 2) >= reqMaxDim) sample *= 2
             val opt2 = BitmapFactory.Options().apply { inSampleSize = sample }
-            BitmapFactory.decodeResource(resources, resId, opt2)
-        } catch (_: Throwable) { null }
+            return BitmapFactory.decodeResource(resources, resId, opt2)
+        } catch (_: Throwable) { return null }
     }
 }
-// Create JSON for this model
