@@ -1,3 +1,5 @@
+<img src='https://abrain.one/img/nnlite-logo.png' width='50%'/>
+
 Automated TFLite Model Benchmarking Suite
 This project provides a fully automated, one-command solution to benchmark PyTorch models on an Android emulator. The system generates a .tflite file from a model in the database, automatically launches an emulator, runs the model inference, and generates a clean JSON report with performance metrics.
 
