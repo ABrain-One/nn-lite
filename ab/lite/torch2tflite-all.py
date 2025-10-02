@@ -54,6 +54,109 @@ class ContinuousProcessor:
         self.failed_models = []
         self.current_model = None
         
+    def collect_device_analytics(self) -> Dict[str, Any]:
+        """Collect device analytics including RAM and CPU information"""
+        analytics = {
+            "timestamp": time.time(),
+            "memory_info": {},
+            "cpu_info": {}
+        }
+        
+        try:
+            # Get memory information
+            mem_result = subprocess.run([
+                'adb', 'shell', 'cat', '/proc/meminfo'
+            ], capture_output=True, text=True, timeout=10)
+            
+            if mem_result.returncode == 0:
+                mem_lines = mem_result.stdout.split('\n')
+                mem_data = {}
+                for line in mem_lines:
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        mem_data[key.strip()] = value.strip()
+                
+                analytics["memory_info"] = {
+                    "total_ram_kb": mem_data.get('MemTotal', 'Unknown'),
+                    "free_ram_kb": mem_data.get('MemFree', 'Unknown'),
+                    "available_ram_kb": mem_data.get('MemAvailable', 'Unknown'),
+                    "cached_kb": mem_data.get('Cached', 'Unknown')
+                }
+
+            # Get CPU information - enhanced for both Intel and ARM
+            cpu_result = subprocess.run([
+                'adb', 'shell', 'cat', '/proc/cpuinfo'
+            ], capture_output=True, text=True, timeout=10)
+            
+            if cpu_result.returncode == 0:
+                cpu_lines = cpu_result.stdout.split('\n')
+                cpu_cores = 0
+                processor_info = []
+                current_cpu = {}
+                
+                # ARM-specific fields (will remain empty on Intel)
+                arm_architecture = {
+                    "processor_architecture": "",
+                    "hardware": "",
+                    "features": "",
+                    "cpu_implementer": "",
+                    "cpu_architecture": "",
+                    "cpu_variant": "",
+                    "cpu_part": "",
+                    "cpu_revision": ""
+                }
+                
+                for line in cpu_lines:
+                    if 'processor' in line and ':' in line:
+                        if current_cpu:
+                            processor_info.append(current_cpu)
+                        current_cpu = {}
+                        cpu_cores += 1
+                    elif ':' in line:
+                        key, value = line.split(':', 1)
+                        key_clean = key.strip().lower()
+                        current_cpu[key_clean] = value.strip()
+                        
+                        # Capture ARM-specific fields (case-insensitive)
+                        key_lower = key.strip().lower()
+                        if key_lower == "processor" and ("aarch64" in value or "arm" in value.lower()):
+                            arm_architecture["processor_architecture"] = value.strip()
+                        elif key_lower == "hardware":
+                            arm_architecture["hardware"] = value.strip()
+                        elif key_lower == "features":
+                            arm_architecture["features"] = value.strip()
+                        elif key_lower == "cpu implementer":
+                            arm_architecture["cpu_implementer"] = value.strip()
+                        elif key_lower == "cpu architecture":
+                            arm_architecture["cpu_architecture"] = value.strip()
+                        elif key_lower == "cpu variant":
+                            arm_architecture["cpu_variant"] = value.strip()
+                        elif key_lower == "cpu part":
+                            arm_architecture["cpu_part"] = value.strip()
+                        elif key_lower == "cpu revision":
+                            arm_architecture["cpu_revision"] = value.strip()
+                
+                if current_cpu:
+                    processor_info.append(current_cpu)
+                
+                # Only include ARM architecture if we found ARM-specific data
+                arm_data = arm_architecture if any(arm_architecture.values()) else None
+                
+                analytics["cpu_info"] = {
+                    "cpu_cores": cpu_cores,
+                    "processors": processor_info[:4] if processor_info else [],
+                    "arm_architecture": arm_data
+                }
+
+            logger.info("✅ Device analytics collected successfully")
+            
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ Timeout while collecting device analytics")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not collect device analytics: {e}")
+        
+        return analytics
+
     def load_state(self) -> Dict[str, Any]:
         """Load processing state from file"""
         if os.path.exists(self.state_file):
@@ -371,13 +474,35 @@ class ContinuousProcessor:
             logger.info("⏳ Waiting 45 seconds for benchmark completion...")
             time.sleep(30)
             
+            # Collect device analytics before retrieving report
+            logger.info("📊 Collecting device analytics...")
+            device_analytics = self.collect_device_analytics()
+            
             # Retrieve report
             device_report = f"{self.device_report_dir}/{model_name}.json"
-            local_report = self.reports_dir / f"{model_name}_report.json"
+            local_report = self.reports_dir / f"{model_name}.json"
             
             pull_result = subprocess.run([
                 'adb', 'pull', device_report, str(local_report)
             ], capture_output=True, text=True)
+            
+            # Enhance the report with analytics if successfully pulled
+            if pull_result.returncode == 0 and local_report.exists():
+                try:
+                    with open(local_report, 'r') as f:
+                        benchmark_data = json.load(f)
+                    
+                    # Add device analytics to the benchmark report
+                    benchmark_data["device_analytics"] = device_analytics
+                    
+                    # Save the enhanced report
+                    with open(local_report, 'w') as f:
+                        json.dump(benchmark_data, f, indent=2)
+                    
+                    logger.info("✅ Device analytics added to benchmark report")
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not enhance report with analytics: {e}")
             
             # Cleanup device
             subprocess.run([

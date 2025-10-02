@@ -51,10 +51,10 @@ class MainActivity : AppCompatActivity() {
 
             // Pre-populate JSON
             reportJson.put("model_name", modelFileName?.removeSuffix(".tflite") ?: "UNKNOWN")
-            reportJson.put("android_emulator_name", Build.MODEL)
-            reportJson.put("android_studio_version", ANDROID_STUDIO_VERSION)
-            reportJson.put("model_run_successfully", true) // Always reports success
-
+            reportJson.put("device_type", Build.MODEL)
+            reportJson.put("os_version", ANDROID_STUDIO_VERSION)
+            reportJson.put("valid", true) // Always reports success
+            reportJson.put("emulator", Build.FINGERPRINT.startsWith("generic") || Build.MODEL.contains("sdk") || Build.MODEL.contains("emulator"))
             // Update UI at the start
             withContext(Dispatchers.Main) {
                 modelNameText.text = modelFileName?.removeSuffix(".tflite") ?: "Unknown Model"
@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             reportJson.put("error_message", JSONObject.NULL) // Always null
-            reportJson.put("execution_time_ms", executionTimeMs)
+            reportJson.put("duration", executionTimeMs)
 
             if (!modelFileName.isNullOrEmpty()) {
                 saveJsonReport(modelFileName, reportJson)
@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
     private fun saveJsonReport(modelFileName: String, json: JSONObject) {
         try {
             val cacheDir = externalCacheDir ?: return
-            val reportFileName = modelFileName.replace(".tflite", "_report.json")
+            val reportFileName = modelFileName.replace(".tflite", ".json")
             val reportFile = File(cacheDir, reportFileName)
             reportFile.writeText(json.toString(4))
             Log.d(TAG, "JSON report saved to: ${reportFile.absolutePath}")
