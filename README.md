@@ -1,65 +1,45 @@
-Automated TFLite Model Benchmarking Suite
-This project provides a fully automated, one-command solution to benchmark PyTorch models on an Android emulator. The system generates a .tflite file from a model in the database, automatically launches an emulator, runs the model inference, and generates a clean JSON report with performance metrics.
+## Create and Activate a Virtual Environment (recommended)
+For Linux/Mac:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+For Windows:
+   ```bash
+   python3 -m venv .venv
+   .venv\Scripts\activate
+   ```
 
-Prerequisites
-Before you begin, ensure you have the following installed and configured on your Linux system:
+## Installing/Updating NN Dataset from GitHub:
+```bash
+rm -rf db
+pip uninstall -y nn-dataset
+pip install git+https://github.com/ABrain-One/nn-dataset --upgrade --force --extra-index-url https://download.pytorch.org/whl/cu126
+```
 
-Python 3.10+
+## Installing/Updating Android Studio
 
-Android Studio: Required to install the Android SDK and create an emulator.
+Simply Install the latest version of android studio.
 
-An Android Virtual Device (AVD): You must create at least one emulator using the AVD Manager in Android Studio.
+Android Studio: Required to install the Android SDK and create an emulator. emolator can be install by the script but it take time better to install it yourself so that you can have UI status of remaining installation. 
+Go to device manager and click on plus icon and select a device and simply install it. 
 
 Configured System PATH: The Android SDK tools must be accessible from your terminal.
-
 To do this permanently, add the following lines to the end of your ~/.bashrc or ~/.zshrc file (adjust the path if your SDK is located elsewhere):
 
 # Android SDK Environment Variables
+```
 export ANDROID_HOME=$HOME/Android/Sdk
 export PATH=$PATH:$ANDROID_HOME/platform-tools
 export PATH=$PATH:$ANDROID_HOME/emulator
+```
 
-After saving the file, apply the changes by running source ~/.bashrc or by opening a new terminal.
 
-Setup Instructions
-Follow these simple, one-time steps to prepare the project.
+# Run all models (original behavior)
+python torch2tflite-all.py
 
-1. Clone the Repository
+# Run single model
+python torch2tflite-all.py AirNet
 
-git clone <your_repository_url>
-cd nn-lite
-
-2. Set Up the Python Environment
-This command creates an isolated Python environment and installs all the necessary libraries.
-
-# Create the virtual environment folder
-python3 -m venv .venv
-
-# Install the required packages from requirements.txt
-./.venv/bin/pip install -r requirements.txt
-
-3. Make the Main Script Executable
-This command gives your system permission to run the automation script.
-
-chmod +x run_everything.sh
-
-How to Run the Benchmark
-This is the single command to run the entire automated process. You must activate the virtual environment first.
-
-1. Activate the Virtual Environment
-
-source .venv/bin/activate
-
-You will see (.venv) appear at the start of your command prompt.
-
-2. Run the Script
-Provide the names of the models you wish to test as arguments.
-
-To run a single model:
-
-./run_everything.sh AirNext
-
-To run multiple models in sequence:
-
-./run_everything.sh AirNext resnet50 Bagnet
-
+# Run multiple models as separate arguments
+python torch2tflite-all.py AirNet ga-196 ga-197 ga-198
