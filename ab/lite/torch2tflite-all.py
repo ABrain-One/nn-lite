@@ -53,6 +53,7 @@ class ContinuousProcessor:
         self.processed_models = []
         self.failed_models = []
         self.current_model = None
+        self.current_avd_name = None
         
     def collect_device_analytics(self) -> Dict[str, Any]:
         """Collect device analytics including RAM and CPU information"""
@@ -156,6 +157,40 @@ class ContinuousProcessor:
             logger.warning(f"⚠️ Could not collect device analytics: {e}")
         
         return analytics
+
+    def get_avd_name(self) -> str:
+        """Get the AVD name for use in filename"""
+        try:
+            # If we already have the AVD name from starting the emulator, use it
+            if self.current_avd_name:
+                return self.current_avd_name
+            
+            # Try to get AVD name from running emulator
+            result = subprocess.run(['adb', 'emu', 'avd', 'name'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                avd_name = result.stdout.strip()
+                # Sanitize the AVD name for filename
+                avd_name = "".join(c for c in avd_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                avd_name = avd_name.replace(' ', '_')
+                return avd_name
+            
+            # Fallback: try to get device model
+            result = subprocess.run([
+                'adb', 'shell', 'getprop', 'ro.product.model'
+            ], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                device_name = result.stdout.strip()
+                device_name = "".join(c for c in device_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                device_name = device_name.replace(' ', '_')
+                return device_name
+            
+            return "unknown_avd"
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get AVD name: {e}")
+            return "unknown_avd"
 
     def load_state(self) -> Dict[str, Any]:
         """Load processing state from file"""
@@ -336,6 +371,8 @@ class ContinuousProcessor:
             # First check if any emulator is already running
             if self.is_emulator_running():
                 logger.info("✅ Emulator is already running")
+                # Try to get the AVD name of the running emulator
+                self.current_avd_name = self.get_avd_name()
                 return True
             
             logger.info("🚀 No emulator running, starting one...")
@@ -349,11 +386,12 @@ class ContinuousProcessor:
             
             # Use the first available AVD
             target_avd = available_avds[0]
+            self.current_avd_name = target_avd
             logger.info(f"📱 Starting AVD: '{target_avd}'")
             
             # Start emulator in background
             process = subprocess.Popen(
-                ['emulator', '-avd', target_avd, '-no-audio'],    # if add -no-window  as emulator argument it will keep running
+                ['emulator', '-avd', target_avd, '-no-audio',  '-no-window' ],    # if add -no-window  as emulator argument it will keep running
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
@@ -438,6 +476,18 @@ class ContinuousProcessor:
                 logger.error(f"❌ TFLite file not found: {tflite_file}")
                 return False
             
+            # Get AVD name for filename
+            avd_name = self.get_avd_name()
+            if not avd_name:
+                logger.warning("⚠️ Could not get AVD name, using 'unknown_avd'")
+                avd_name = "unknown_avd"
+            
+            # Get task from config and create task_modelName directory
+            config = self.get_mobile_friendly_config(model_name)
+            task = config.get('task', 'unknown_task')
+            task_model_dir = self.reports_dir / f"{task}_{model_name}"
+            task_model_dir.mkdir(parents=True, exist_ok=True)
+            
             # Push model to device
             logger.info(f"📤 Pushing model to device: {model_name}")
             push_result = subprocess.run([
@@ -478,9 +528,9 @@ class ContinuousProcessor:
             logger.info("📊 Collecting device analytics...")
             device_analytics = self.collect_device_analytics()
             
-            # Retrieve report
+            # Retrieve report with new structure
             device_report = f"{self.device_report_dir}/{model_name}.json"
-            local_report = self.reports_dir / f"{model_name}.json"
+            local_report = task_model_dir / f"android_{avd_name}.json"
             
             pull_result = subprocess.run([
                 'adb', 'pull', device_report, str(local_report)
@@ -513,6 +563,7 @@ class ContinuousProcessor:
             
             if pull_result.returncode == 0 and local_report.exists():
                 logger.info(f"✅ Benchmark completed and report retrieved: {model_name}")
+                logger.info(f"📁 Report saved to: {local_report}")
                 return True
             else:
                 logger.error(f"❌ Failed to retrieve benchmark report for {model_name}")
