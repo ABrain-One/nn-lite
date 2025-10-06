@@ -17,6 +17,15 @@ pip uninstall -y nn-dataset
 pip install git+https://github.com/ABrain-One/nn-dataset --upgrade --force --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
+## Installing/Updating requirments 
+
+```
+pip install -r requirements.txt
+
+```
+
+
+
 ## Installing/Updating Android Studio
 
 Simply Install the latest version of android studio.
@@ -43,3 +52,5 @@ python torch2tflite-all.py AirNet
 
 # Run multiple models as separate arguments
 python torch2tflite-all.py AirNet ga-196 ga-197 ga-198
+
+
