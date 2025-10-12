@@ -15,15 +15,16 @@ python3 -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
 ```
+
+## Installing requirements 
+```bash
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
+```
+
 ## Install/Update NN Dataset from GitHub:
 ```bash
 rm -rf db
 pip install --no-cache-dir git+https://github.com/ABrain-One/nn-dataset --upgrade --force --extra-index-url https://download.pytorch.org/whl/cu126
-```
-
-## Installing/Updating requirments 
-```bash
-pip install -r requirements.txt
 ```
 
 ## Install Android Studio (Outside of Virtual Enviroment) 'Android Studio Narwhal 3 Feature Drop | 2025.1.3' through a ready made script: 
