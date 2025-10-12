@@ -27,26 +27,26 @@ rm -rf db
 pip install --no-cache-dir git+https://github.com/ABrain-One/nn-dataset --upgrade --force --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
-## Install Android Studio (Outside of Virtual Enviroment) 'Android Studio Narwhal 3 Feature Drop | 2025.1.3' through a ready made script: 
+## Install Android Studio (Outside of Virtual Environment) 'Android Studio Narwhal 3 Feature Drop | 2025.1.3' through a ready made script: 
 For Linux:
 ```bash
-chmod +x install-android-studio-local.sh
-./install-android-studio-local.sh
+chmod +x install-android-studio.sh
+./install-android-studio.sh
 ```
 
 # Run all models (original behavior)
 ```bash
-python torch2tflite-all.py
+python -m ab.lite.torch2tflite-all
 ```
 
 # Run single model
 ```bash
-python torch2tflite-all.py AirNet
+python -m ab.lite.torch2tflite-all AirNet
 ```
 	
 # Run multiple models as separate arguments
 ```bash
-python torch2tflite-all.py AirNet ga-196 ga-197 ga-198	
+python -m ab.lite.torch2tflite-all AirNet ga-196 ga-197 ga-198	
 ```
 		
 
@@ -69,15 +69,15 @@ sudo mv android-studio /opt/
 /opt/android-studio/bin/studio.sh
 ```
 	
-# Open the Kotlinapplication in Android Studio:	
+# Open the App in Android Studio:	
 	
-Select 'Kotlinapplication' and import it as a Project
+Select 'App' and import it as a Project
 Go to Tools->Device Manager->Add a new device through '+' symbol. e.g. Pixel 5
 
 	
 # Set up Android SDK Environment Variables:
 
-Select 'Kotlinapplication' and import it as a Project
+Select 'App' and import it as a Project
 Go to Tools->Device Manager->Add a new device through '+' symbol. e.g. Pixel 5
 	
 # Set up Android SDK Environment Variables:
@@ -89,21 +89,5 @@ Go to the end of the file and add these 3 lines of code according to your availa
 		export ANDROID_HOME="/home/ahsan/Android/Sdk"
 		export PATH="$PATH:/home/ahsan/Android/Sdk/cmdline-tools/latest/bin:/home/ahsan/.local/bin"
 	You can find your paths through: Tools->Device Manager->Android SDK Location
-
-
-# Run all models (original behavior)
-```bash
-python torch2tflite-all.py
-```
-
-# Run single model
-```bash
-python torch2tflite-all.py AirNet
-```
-	
-# Run multiple models as separate arguments
-```bash
-python torch2tflite-all.py AirNet ga-196 ga-197 ga-198	
-```
 
 #### The idea and leadership of Dr. Ignatov

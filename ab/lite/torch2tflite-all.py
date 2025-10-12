@@ -5,7 +5,7 @@ import gc
 import time
 import subprocess
 import json
-from pathlib import Path
+from ab.nn.util.Const import out_dir
 from typing import List, Dict, Any, Tuple
 import torch
 import ai_edge_torch
@@ -14,12 +14,14 @@ import importlib
 import logging
 import traceback
 
+out_dir.mkdir(exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('continuous_processing.log'),
+        logging.FileHandler(out_dir / 'continuous_processing.log'),
         logging.StreamHandler()
     ]
 )
@@ -37,17 +39,17 @@ class ContinuousProcessor:
     def __init__(self):
         self.device = torch.device("cpu")
         self.max_batch_size = 32
-        self.state_file = "processing_state.json"
-        self.tflite_dir = Path("generated_tflite_files")
-        self.reports_dir = Path("benchmark_reports")
+        self.state_file = out_dir / 'processing_state.json'
+        self.tflite_dir = out_dir / 'generated_tflite_files'
+        self.reports_dir = out_dir / 'benchmark_reports'
         self.tflite_dir.mkdir(exist_ok=True)
         self.reports_dir.mkdir(exist_ok=True)
         
         # Android configuration
-        self.package_name = "com.example.kotlinapplication"
+        self.package_name = "com.example.App"
         self.device_model_dir = "/data/local/tmp"
         self.device_report_dir = f"/storage/emulated/0/Android/data/{self.package_name}/cache"
-        self.android_project_path = "../../Kotlinapplication"
+        self.android_project_path = "App"
         
         # Track progress
         self.processed_models = []
