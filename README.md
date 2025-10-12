@@ -1,12 +1,12 @@
 
 ## Create and Activate a Virtual Environment (recommended)
 For Linux/Mac:
-   ```bash
+   ```
    python3 -m venv .venv
    source .venv/bin/activate
    ```
 For Windows:
-   ```bash
+   ```
    python3 -m venv .venv
    .venv\Scripts\activate
    ```
@@ -65,6 +65,12 @@ For Linux:
 	```
 	
 # Open the Kotlinapplication in Android Studio:	
+	
+	Select 'Kotlinapplication' and import it as a Project
+	Go to Tools->Device Manager->Add a new device through '+' symbol. e.g. Pixel 5
+
+	
+# Set up Android SDK Environment Variables:
 	```bash
 	Select 'Kotlinapplication' and import it as a Project
 	Go to Tools->Device Manager->Add a new device through '+' symbol. e.g. Pixel 5

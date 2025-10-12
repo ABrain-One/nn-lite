@@ -468,6 +468,60 @@ class ContinuousProcessor:
             logger.error(f"❌ App installation error: {e}")
             return False
     
+    def force_stop_emulator(self):
+        """Force stop the emulator"""
+        try:
+            logger.info("🛑 Force stopping emulator...")
+            
+            # Kill emulator process
+            subprocess.run(['adb', 'emu', 'kill'], capture_output=True, timeout=30)
+            
+            # Wait a bit for process to terminate
+            time.sleep(10)
+            
+            # Force kill any remaining emulator processes
+            subprocess.run(['pkill', '-f', 'emulator'], capture_output=True)
+            
+            logger.info("✅ Emulator stopped")
+            
+        except Exception as e:
+            logger.error(f"⚠️ Error stopping emulator: {e}")
+    
+    def handle_benchmark_failure(self, model_name: str):
+        """Handle benchmark failure by waiting, closing everything, and restarting"""
+        logger.error(f"🔄 Benchmark failed for {model_name}, initiating recovery...")
+        
+        # Step 1: Wait for 3 minutes
+        logger.info("⏳ Waiting 3 minutes before recovery...")
+        for i in range(180, 0, -10):
+            logger.info(f"   ... {i} seconds remaining")
+            time.sleep(10)
+        
+        # Step 2: Close everything
+        logger.info("🛑 Closing all processes...")
+        
+        # Force stop emulator
+        self.force_stop_emulator()
+        
+        # Kill any ADB processes
+        try:
+            subprocess.run(['pkill', '-f', 'adb'], capture_output=True)
+            logger.info("✅ ADB processes killed")
+        except:
+            pass
+        
+        # Additional cleanup
+        self.cleanup_memory()
+        
+        # Step 3: Wait a bit more
+        logger.info("⏳ Final wait before restart...")
+        time.sleep(10)
+        
+        logger.info("🔄 Restarting process...")
+        
+        # Restart the script
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    
     def run_benchmark(self, model_name: str) -> bool:
         """Run benchmark on Android device and retrieve results"""
         try:
@@ -567,10 +621,14 @@ class ContinuousProcessor:
                 return True
             else:
                 logger.error(f"❌ Failed to retrieve benchmark report for {model_name}")
+                # Handle benchmark failure by waiting, closing, and restarting
+                self.handle_benchmark_failure(model_name)
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Benchmark execution error for {model_name}: {e}")
+            # Handle benchmark failure by waiting, closing, and restarting
+            self.handle_benchmark_failure(model_name)
             return False
     
     def cleanup_memory(self):
