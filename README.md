@@ -1,3 +1,6 @@
+# Mobile-Ready AI: Verification and Deployment on Edge Devices
+
+<img src='https://abrain.one/img/nnlite-logo.png' width='25%'/>
 
 ## Create and Activate a Virtual Environment (recommended)
 For Linux/Mac:
@@ -101,3 +104,4 @@ For Linux:
 	python torch2tflite-all.py AirNet ga-196 ga-197 ga-198	
 	```
 
+#### The idea and leadership of Dr. Ignatov
