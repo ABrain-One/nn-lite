@@ -90,4 +90,21 @@ Go to the end of the file and add these 3 lines of code according to your availa
 		export PATH="$PATH:/home/ahsan/Android/Sdk/cmdline-tools/latest/bin:/home/ahsan/.local/bin"
 	You can find your paths through: Tools->Device Manager->Android SDK Location
 
+## Citation
+
+If you find this project to be useful for your research, please consider citing our article:
+```bibtex
+@article{ABrain.NN-Lite,
+    title = {AI on the Edge: An Automated Pipeline for PyTorch-to-Android Deployment and Benchmarking},
+	author = {Saif U Din and Muhammad Ahsan Hussain and Mohsin Ikram and Dmitry Ignatov and Radu Timofte},
+	doi = {10.20944/preprints202511.1831.v1},
+	url = {https://doi.org/10.20944/preprints202511.1831.v1},
+	year = 2025,
+	month = {November},
+	publisher = {Preprints},
+	journal = {Preprints}
+}
+
+```
+
 #### The idea and leadership of Dr. Ignatov
