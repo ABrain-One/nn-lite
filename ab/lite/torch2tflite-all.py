@@ -56,7 +56,73 @@ class ContinuousProcessor:
         self.failed_models = []
         self.current_model = None
         self.current_avd_name = None
-        
+        # Selected adb serial (None -> no explicit -s passed)
+        self.adb_serial = None
+
+    def run_adb(self, args, **kwargs):
+        """Run adb command and automatically add -s <serial> if a device is selected.
+
+        Args are the remaining adb arguments (e.g. ['shell', 'getprop']).
+        Additional kwargs are forwarded to subprocess.run.
+        """
+        base = ['adb']
+        if self.adb_serial:
+            base.extend(['-s', self.adb_serial])
+        base.extend(args)
+        try:
+            return subprocess.run(base, **kwargs)
+        except Exception:
+            # In rare cases fallback to raw subprocess.run to preserve existing behavior
+            return subprocess.run(base, **kwargs)
+
+    def get_connected_devices(self) -> List[Tuple[str, str]]:
+        """Return list of tuples (serial, state) from `adb devices`."""
+        try:
+            result = subprocess.run(['adb', 'devices'], capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                return []
+            lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+            devices = []
+            for line in lines[1:]:
+                parts = line.split()
+                if len(parts) >= 2:
+                    devices.append((parts[0], parts[1]))
+            return devices
+        except Exception:
+            return []
+
+    def select_target_device(self) -> bool:
+        """Select connected Android device to use.
+
+        Preference order:
+        1. Real (non-emulator) device with state 'device'
+        2. Any emulator device (serial starts with 'emulator-')
+        3. None (no device connected)
+        """
+        devices = self.get_connected_devices()
+        if not devices:
+            logger.info("No adb devices connected")
+            self.adb_serial = None
+            return False
+
+        # Prefer real devices (serials not starting with 'emulator-')
+        for serial, state in devices:
+            if state == 'device' and not serial.startswith('emulator-'):
+                self.adb_serial = serial
+                logger.info(f"✅ Selected real device: {serial}")
+                return True
+
+        # Fallback to any emulator device
+        for serial, state in devices:
+            if state == 'device' and serial.startswith('emulator-'):
+                self.adb_serial = serial
+                logger.info(f"ℹ️ Selected emulator device: {serial}")
+                return True
+
+        # No usable devices
+        self.adb_serial = None
+        logger.info("No usable adb devices found (no 'device' state)")
+        return False
     def collect_device_analytics(self) -> Dict[str, Any]:
         """Collect device analytics including RAM and CPU information"""
         analytics = {
@@ -67,9 +133,7 @@ class ContinuousProcessor:
         
         try:
             # Get memory information
-            mem_result = subprocess.run([
-                'adb', 'shell', 'cat', '/proc/meminfo'
-            ], capture_output=True, text=True, timeout=10)
+            mem_result = self.run_adb(['shell', 'cat', '/proc/meminfo'], capture_output=True, text=True, timeout=10)
             
             if mem_result.returncode == 0:
                 mem_lines = mem_result.stdout.split('\n')
@@ -87,9 +151,7 @@ class ContinuousProcessor:
                 }
 
             # Get CPU information - enhanced for both Intel and ARM
-            cpu_result = subprocess.run([
-                'adb', 'shell', 'cat', '/proc/cpuinfo'
-            ], capture_output=True, text=True, timeout=10)
+            cpu_result = self.run_adb(['shell', 'cat', '/proc/cpuinfo'], capture_output=True, text=True, timeout=10)
             
             if cpu_result.returncode == 0:
                 cpu_lines = cpu_result.stdout.split('\n')
@@ -168,8 +230,7 @@ class ContinuousProcessor:
                 return self.current_avd_name
             
             # Try to get AVD name from running emulator
-            result = subprocess.run(['adb', 'emu', 'avd', 'name'], 
-                                  capture_output=True, text=True, timeout=10)
+            result = self.run_adb(['emu', 'avd', 'name'], capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
                 avd_name = result.stdout.strip()
                 # Sanitize the AVD name for filename
@@ -178,9 +239,7 @@ class ContinuousProcessor:
                 return avd_name
             
             # Fallback: try to get device model
-            result = subprocess.run([
-                'adb', 'shell', 'getprop', 'ro.product.model'
-            ], capture_output=True, text=True, timeout=10)
+            result = self.run_adb(['shell', 'getprop', 'ro.product.model'], capture_output=True, text=True, timeout=10)
             
             if result.returncode == 0:
                 device_name = result.stdout.strip()
@@ -418,11 +477,8 @@ class ContinuousProcessor:
             boot_time = 0
             while boot_time < 120:  # 2 minute timeout
                 try:
-                    result = subprocess.run(
-                        ['adb', 'shell', 'getprop', 'sys.boot_completed'], 
-                        capture_output=True, text=True, timeout=10
-                    )
-                    if result.stdout.strip() == "1":
+                    result = self.run_adb(['shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0 and result.stdout.strip() == "1":
                         logger.info("✅ Emulator is fully booted and ready")
                         return True
                 except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
@@ -455,12 +511,74 @@ class ContinuousProcessor:
                 text=True,
                 timeout=300  # 5 minute timeout
             )
-            
+
             if result.returncode == 0:
                 logger.info("✅ Android app installed successfully")
                 return True
             else:
                 logger.error(f"❌ App installation failed: {result.stderr}")
+                # Attempt fallback: use adb install directly
+                try:
+                    apk_path = os.path.join(self.android_project_path, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+                    if os.path.exists(apk_path):
+                        logger.info(f"🔁 Attempting fallback install via adb of '{apk_path}'")
+                        # Ensure we have a target device selected
+                        if not self.adb_serial:
+                            self.select_target_device()
+
+                        # Start logcat capture to help diagnose device-side restriction
+                        try:
+                            ts = int(time.time())
+                            log_file = out_dir / f"install_logcat_{ts}.log"
+                            logger.info(f"📥 Capturing device logcat to: {log_file}")
+                            adb_base = ['adb']
+                            if self.adb_serial:
+                                adb_base.extend(['-s', self.adb_serial])
+                            logcat_proc = subprocess.Popen(adb_base + ['logcat', '-v', 'time'], stdout=open(log_file, 'w'), stderr=subprocess.DEVNULL)
+                        except Exception as e:
+                            logcat_proc = None
+                            logger.warning(f"⚠️ Could not start logcat capture: {e}")
+
+                        # Try adb install -r
+                        adb_install = self.run_adb(['install', '-r', apk_path], capture_output=True, text=True)
+                        if adb_install.returncode == 0:
+                            logger.info("✅ APK installed via adb fallback")
+                            if logcat_proc:
+                                logcat_proc.terminate()
+                            return True
+                        else:
+                            logger.warning(f"⚠️ adb install returned: {adb_install.stderr}")
+                            # Try push + pm install as a last resort
+                            try:
+                                remote_path = f"/data/local/tmp/{os.path.basename(apk_path)}"
+                                push_res = self.run_adb(['push', apk_path, remote_path], capture_output=True, text=True)
+                                if push_res.returncode == 0:
+                                    pm_res = self.run_adb(['shell', 'pm', 'install', '-r', remote_path], capture_output=True, text=True)
+                                    if pm_res.returncode == 0:
+                                        logger.info("✅ APK installed via push+pm fallback")
+                                        if logcat_proc:
+                                            logcat_proc.terminate()
+                                        return True
+                                    else:
+                                        logger.warning(f"⚠️ pm install failed: {pm_res.stderr}")
+                                else:
+                                    logger.warning(f"⚠️ adb push failed: {push_res.stderr}")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Fallback push+pm install failed: {e}")
+
+                        # Stop logcat capture and point user to the file
+                        if logcat_proc:
+                            try:
+                                logcat_proc.terminate()
+                                time.sleep(0.5)
+                            except Exception:
+                                pass
+                            logger.info(f"🔍 Saved device logcat to: {log_file}")
+                    else:
+                        logger.warning(f"⚠️ APK not found for fallback install: {apk_path}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error during fallback install: {e}")
+
                 return False
                 
         except subprocess.TimeoutExpired:
@@ -476,7 +594,7 @@ class ContinuousProcessor:
             logger.info("🛑 Force stopping emulator...")
             
             # Kill emulator process
-            subprocess.run(['adb', 'emu', 'kill'], capture_output=True, timeout=30)
+            self.run_adb(['emu', 'kill'], capture_output=True, timeout=30)
             
             # Wait a bit for process to terminate
             time.sleep(10)
@@ -546,11 +664,7 @@ class ContinuousProcessor:
             
             # Push model to device
             logger.info(f"📤 Pushing model to device: {model_name}")
-            push_result = subprocess.run([
-                'adb', 'push', 
-                str(tflite_file), 
-                f"{self.device_model_dir}/{model_name}.tflite"
-            ], capture_output=True, text=True)
+            push_result = self.run_adb(['push', str(tflite_file), f"{self.device_model_dir}/{model_name}.tflite"], capture_output=True, text=True)
             
             if push_result.returncode != 0:
                 logger.error(f"❌ Failed to push model: {push_result.stderr}")
@@ -559,16 +673,11 @@ class ContinuousProcessor:
             logger.info("✅ Model pushed successfully")
             
             # Stop previous instance
-            subprocess.run(['adb', 'shell', 'am', 'force-stop', self.package_name], 
-                         capture_output=True)
+            self.run_adb(['shell', 'am', 'force-stop', self.package_name], capture_output=True)
             
             # Launch benchmark
             logger.info("🎯 Launching benchmark...")
-            launch_result = subprocess.run([
-                'adb', 'shell', 'am', 'start',
-                '-n', f"{self.package_name}/.MainActivity",
-                '--es', 'model_filename', f"{model_name}.tflite"
-            ], capture_output=True, text=True)
+            launch_result = self.run_adb(['shell', 'am', 'start', '-n', f"{self.package_name}/.MainActivity", '--es', 'model_filename', f"{model_name}.tflite"], capture_output=True, text=True)
             
             if launch_result.returncode != 0:
                 logger.error(f"❌ Failed to launch benchmark: {launch_result.stderr}")
@@ -588,9 +697,7 @@ class ContinuousProcessor:
             device_report = f"{self.device_report_dir}/{model_name}.json"
             local_report = task_model_dir / f"android_{avd_name}.json"
             
-            pull_result = subprocess.run([
-                'adb', 'pull', device_report, str(local_report)
-            ], capture_output=True, text=True)
+            pull_result = self.run_adb(['pull', device_report, str(local_report)], capture_output=True, text=True)
             
             # Enhance the report with analytics if successfully pulled
             if pull_result.returncode == 0 and local_report.exists():
@@ -611,11 +718,7 @@ class ContinuousProcessor:
                     logger.warning(f"⚠️ Could not enhance report with analytics: {e}")
             
             # Cleanup device
-            subprocess.run([
-                'adb', 'shell', 'rm', 
-                f"{self.device_model_dir}/{model_name}.tflite",
-                device_report
-            ], capture_output=True)
+            self.run_adb(['shell', 'rm', f"{self.device_model_dir}/{model_name}.tflite", device_report], capture_output=True)
             
             if pull_result.returncode == 0 and local_report.exists():
                 logger.info(f"✅ Benchmark completed and report retrieved: {model_name}")
@@ -675,10 +778,18 @@ class ContinuousProcessor:
         logger.info(f"   Remaining models: {', '.join(remaining_models)}")
         
         # Ensure emulator is running (using any available AVD)
-        logger.info("📱 Setting up emulator...")
-        if not self.ensure_emulator_running():
-            logger.error("❌ Cannot proceed without emulator")
-            return
+        # Prefer a connected real device; fall back to emulator if needed
+        logger.info("🔎 Selecting target device (real device preferred)...")
+        has_device = self.select_target_device()
+        if has_device and self.adb_serial and not str(self.adb_serial).startswith('emulator-'):
+            logger.info(f"✅ Using real device: {self.adb_serial}")
+        else:
+            logger.info("📱 No real device found or using emulator. Ensuring emulator is running...")
+            if not self.ensure_emulator_running():
+                logger.error("❌ Cannot proceed without emulator or connected device")
+                return
+            # re-select device after emulator startup
+            self.select_target_device()
         
         # Install app once
         if not self.install_android_app():
