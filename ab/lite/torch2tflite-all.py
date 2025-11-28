@@ -213,6 +213,13 @@ class ContinuousProcessor:
                     "arm_architecture": arm_data
                 }
 
+            # Best-effort detection of compute units (GPU/NPU/CPU names)
+            try:
+                units = self.detect_compute_units()
+                analytics['compute_units'] = units
+            except Exception:
+                analytics['compute_units'] = {}
+
             logger.info("✅ Device analytics collected successfully")
             
         except subprocess.TimeoutExpired:
@@ -221,6 +228,75 @@ class ContinuousProcessor:
             logger.warning(f"⚠️ Could not collect device analytics: {e}")
         
         return analytics
+
+    def detect_compute_units(self) -> Dict[str, Any]:
+        """Best-effort detection of compute units (CPU/GPU/NPU) on the Android device.
+
+        Returns a dict with keys like 'cpu', 'gpu', 'npu' and human-readable names when found.
+        This is best-effort because vendors expose different sysfs paths and properties.
+        """
+        units = {"cpu": None, "gpu": None, "npu": None, "other": []}
+        try:
+            # CPU model from getprop or /proc/cpuinfo
+            cpu_prop = self.run_adb(['shell', 'getprop', 'ro.product.cpu.abi'], capture_output=True, text=True)
+            if cpu_prop.returncode == 0 and cpu_prop.stdout.strip():
+                units['cpu'] = cpu_prop.stdout.strip()
+            else:
+                cpuinfo = self.run_adb(['shell', 'cat', '/proc/cpuinfo'], capture_output=True, text=True)
+                if cpuinfo.returncode == 0 and cpuinfo.stdout:
+                    # take first 'model name' or 'Hardware' line
+                    for line in cpuinfo.stdout.splitlines():
+                        if ':' in line:
+                            k, v = line.split(':', 1)
+                            key = k.strip().lower()
+                            if key in ('model name', 'hardware', 'processor') and v.strip():
+                                units['cpu'] = v.strip()
+                                break
+
+            # GPU detection: try common sysfs paths (Adreno: kgsl, Mali: mali)
+            try_paths = [
+                '/sys/class/kgsl/kgsl-3d0/gpu_model',
+                '/sys/class/kgsl/kgsl-3d0/gpu_id',
+                '/sys/class/misc/mali0/name',
+                '/sys/class/misc/mali0/device/name',
+            ]
+            for p in try_paths:
+                res = self.run_adb(['shell', 'cat', p], capture_output=True, text=True)
+                if res.returncode == 0 and res.stdout.strip():
+                    units['gpu'] = res.stdout.strip()
+                    break
+
+            # Fallback: try dumpsys SurfaceFlinger or GLES strings
+            if not units['gpu']:
+                sf = self.run_adb(['shell', 'dumpsys', 'SurfaceFlinger'], capture_output=True, text=True)
+                if sf.returncode == 0 and sf.stdout:
+                    out = sf.stdout
+                    for marker in ('Adreno', 'Mali', 'PVR', 'PowerVR', 'Apple', 'Intel'):
+                        if marker.lower() in out.lower():
+                            units['gpu'] = marker
+                            break
+
+            # NPU / DSP detection - check for common vendor sysfs/driver names
+            npu_paths = [
+                '/sys/class/nn', '/sys/class/vsi', '/sys/class/mediatek_npu',
+                '/sys/class/arm-npu', '/sys/class/mlx', '/dev/hexagon'
+            ]
+            for p in npu_paths:
+                res = self.run_adb(['shell', 'ls', p], capture_output=True, text=True)
+                if res.returncode == 0:
+                    units['npu'] = p
+                    break
+
+            # As a last resort, look for 'hexagon' or 'npu' keywords in cpuinfo or dmesg
+            if not units['npu']:
+                cpuinfo = self.run_adb(['shell', 'cat', '/proc/cpuinfo'], capture_output=True, text=True)
+                if cpuinfo.returncode == 0 and ('hexagon' in cpuinfo.stdout.lower() or 'hexagon' in cpuinfo.stderr.lower()):
+                    units['npu'] = 'Hexagon (DSP)'
+
+        except Exception:
+            pass
+
+        return units
 
     def get_avd_name(self) -> str:
         """Get the AVD name for use in filename"""
@@ -686,8 +762,8 @@ class ContinuousProcessor:
             logger.info("✅ Benchmark launched successfully")
             
             # Wait for completion
-            logger.info("⏳ Waiting 45 seconds for benchmark completion...")
-            time.sleep(30)
+            logger.info("⏳ Waiting 20 seconds for benchmark completion...")
+            time.sleep(20)
             
             # Collect device analytics before retrieving report
             logger.info("📊 Collecting device analytics...")
@@ -707,6 +783,15 @@ class ContinuousProcessor:
                     
                     # Add device analytics to the benchmark report
                     benchmark_data["device_analytics"] = device_analytics
+                    # Add a concise 'unit' field (preference: NPU -> GPU -> CPU)
+                    try:
+                        cu = device_analytics.get('compute_units', {}) if isinstance(device_analytics, dict) else {}
+                        unit = cu.get('npu') or cu.get('gpu') or cu.get('cpu')
+                        if isinstance(unit, list) and unit:
+                            unit = unit[0]
+                        benchmark_data['unit'] = unit
+                    except Exception:
+                        benchmark_data['unit'] = None
                     
                     # Save the enhanced report
                     with open(local_report, 'w') as f:
