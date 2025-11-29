@@ -13,6 +13,7 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlin.system.measureNanoTime
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -62,7 +63,7 @@ class MainActivity : AppCompatActivity() {
                 progressBar.isVisible = true
             }
 
-            val executionTimeMs = measureTimeMillis {
+            val executionTimeNs = measureNanoTime {
                 try {
                     if (modelFileName.isNullOrEmpty()) {
                         throw Exception("FATAL: App launched without a 'model_filename' argument.")
@@ -81,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             reportJson.put("error_message", JSONObject.NULL) // Always null
-            reportJson.put("duration", executionTimeMs)
+            reportJson.put("duration", executionTimeNs)
 
             if (!modelFileName.isNullOrEmpty()) {
                 saveJsonReport(modelFileName, reportJson)
