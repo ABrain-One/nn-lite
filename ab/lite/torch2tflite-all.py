@@ -39,6 +39,20 @@ class ContinuousProcessor:
     def __init__(self):
         self.device = torch.device("cpu")
         self.max_batch_size = 32
+        # Maximum allowed model parameter size (MB) before skipping conversion
+        # Can be overridden with environment variable MAX_PARAM_MB
+        try:
+            self.max_param_mb = int(os.environ.get('MAX_PARAM_MB', '500'))
+        except Exception:
+            self.max_param_mb = 500
+        # Restart after processing N models (to free memory)
+        # Can be overridden with environment variable RESTART_EVERY
+        try:
+            self.restart_every = int(os.environ.get('RESTART_EVERY', '50'))
+        except Exception:
+            self.restart_every = 50
+        # Counter for models processed since last restart
+        self.models_since_restart = 0
         self.state_file = out_dir / 'processing_state.json'
         self.tflite_dir = out_dir / 'generated_tflite_files'
         self.reports_dir = out_dir / 'benchmark_reports'
@@ -449,6 +463,21 @@ class ContinuousProcessor:
             logger.info(f"Converting model: {model_name}")
             config = self.get_mobile_friendly_config(model_name)
             model, size, batch, prm = self.instantiate_model(config, 100)
+
+            # Quick safety: estimate model size from parameter count (float32 assumed)
+            try:
+                num_params = sum(p.numel() for p in model.parameters())
+                est_bytes = int(num_params) * 4
+                est_mb = est_bytes / (1024.0 * 1024.0)
+            except Exception:
+                num_params = None
+                est_mb = None
+
+            if est_mb is not None:
+                logger.info(f"Model params: {num_params:,} (~{est_mb:.1f} MB)")
+                if est_mb > float(self.max_param_mb):
+                    logger.error(f"❌ Skipping conversion: estimated model size {est_mb:.1f} MB exceeds threshold {self.max_param_mb} MB")
+                    return False
             
             # Wrap and convert
             wrapped_model = NHWCWrapper(model)
@@ -913,6 +942,15 @@ class ContinuousProcessor:
             # Update state
             self.current_model = None
             self.save_state()
+
+            # Check if we should restart the process to free memory
+            if self.restart_every > 0:
+                self.models_since_restart += 1
+                if self.models_since_restart >= self.restart_every:
+                    logger.info(f"🔄 Processed {self.models_since_restart} models; restarting process to free memory...")
+                    time.sleep(2)
+                    # Gracefully restart by re-executing the script with the same arguments
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
             
             # Small delay between models
             if idx < total_models:
