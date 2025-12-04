@@ -37,8 +37,12 @@ class TFLiteClassifier(
             when (delegateType) {
                 DelegateType.CPU -> {} // Default
                 DelegateType.GPU -> {
-                    // Use default GPU delegate options to avoid compatibility issues
-                    gpuDelegate = GpuDelegate()
+                    // Use explicit GPU delegate options for compatibility
+                    val gpuOptions = GpuDelegate.Options().apply {
+                        setPrecisionLossAllowed(true) // Allow FP16 for better performance
+                        setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED)
+                    }
+                    gpuDelegate = GpuDelegate(gpuOptions)
                     addDelegate(gpuDelegate)
                 }
                 DelegateType.NNAPI -> {
