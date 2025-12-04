@@ -67,18 +67,16 @@ dependencies {
         androidTestImplementation(libs.androidx.espresso.core)
 
         // ✅ Stable combo
-        implementation("org.tensorflow:tensorflow-lite:2.12.0")
-        implementation("org.tensorflow:tensorflow-lite-support:0.4.3")
+        implementation("org.tensorflow:tensorflow-lite:2.14.0")
+        implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
         implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
         implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-        implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.12.0")
-
-
-        // Add only if you get "Op not found" runtime errors:
-    // implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.17.0")
-
-    // Optional GPU delegate (enable after CPU path works):
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.12.0")
+        implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
+        
+        // GPU delegate with proper factory support
+        implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+        implementation("org.tensorflow:tensorflow-lite-gpu-api:2.14.0")
+        implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
 }
 }
 
