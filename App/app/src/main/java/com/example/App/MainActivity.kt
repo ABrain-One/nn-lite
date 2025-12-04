@@ -84,6 +84,7 @@ class MainActivity : AppCompatActivity() {
 
             val delegates = listOf(
                 "CPU" to TFLiteClassifier.DelegateType.CPU,
+                "GPU" to TFLiteClassifier.DelegateType.GPU,
                 "NPU" to TFLiteClassifier.DelegateType.NNAPI
             )
 
@@ -155,6 +156,10 @@ class MainActivity : AppCompatActivity() {
                 if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
                     val cpu = results.getJSONObject("CPU")
                     sb.append("CPU: ${cpu.getLong("duration_ns") / 1_000_000} ms\n")
+                }
+                if (results.has("GPU") && !results.getJSONObject("GPU").has("error")) {
+                    val gpu = results.getJSONObject("GPU")
+                    sb.append("GPU: ${gpu.getLong("duration_ns") / 1_000_000} ms\n")
                 }
                 if (results.has("NPU") && !results.getJSONObject("NPU").has("error")) {
                     val npu = results.getJSONObject("NPU")
