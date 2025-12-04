@@ -267,28 +267,28 @@ class ContinuousProcessor:
                                 units['cpu'] = v.strip()
                                 break
 
-            # GPU detection: try common sysfs paths (Adreno: kgsl, Mali: mali)
-            try_paths = [
-                '/sys/class/kgsl/kgsl-3d0/gpu_model',
-                '/sys/class/kgsl/kgsl-3d0/gpu_id',
-                '/sys/class/misc/mali0/name',
-                '/sys/class/misc/mali0/device/name',
-            ]
-            for p in try_paths:
-                res = self.run_adb(['shell', 'cat', p], capture_output=True, text=True)
-                if res.returncode == 0 and res.stdout.strip():
-                    units['gpu'] = res.stdout.strip()
-                    break
-
+            # GPU detection: SKIPPED as requested
+            # try_paths = [
+            #     '/sys/class/kgsl/kgsl-3d0/gpu_model',
+            #     '/sys/class/kgsl/kgsl-3d0/gpu_id',
+            #     '/sys/class/misc/mali0/name',
+            #     '/sys/class/misc/mali0/device/name',
+            # ]
+            # for p in try_paths:
+            #     res = self.run_adb(['shell', 'cat', p], capture_output=True, text=True)
+            #     if res.returncode == 0 and res.stdout.strip():
+            #         units['gpu'] = res.stdout.strip()
+            #         break
+            
             # Fallback: try dumpsys SurfaceFlinger or GLES strings
-            if not units['gpu']:
-                sf = self.run_adb(['shell', 'dumpsys', 'SurfaceFlinger'], capture_output=True, text=True)
-                if sf.returncode == 0 and sf.stdout:
-                    out = sf.stdout
-                    for marker in ('Adreno', 'Mali', 'PVR', 'PowerVR', 'Apple', 'Intel'):
-                        if marker.lower() in out.lower():
-                            units['gpu'] = marker
-                            break
+            # if not units['gpu']:
+            #     sf = self.run_adb(['shell', 'dumpsys', 'SurfaceFlinger'], capture_output=True, text=True)
+            #     if sf.returncode == 0 and sf.stdout:
+            #         out = sf.stdout
+            #         for marker in ('Adreno', 'Mali', 'PVR', 'PowerVR', 'Apple', 'Intel'):
+            #             if marker.lower() in out.lower():
+            #                 units['gpu'] = marker
+            #                 break
 
             # NPU / DSP detection - check for common vendor sysfs/driver names
             npu_paths = [
@@ -438,7 +438,8 @@ class ContinuousProcessor:
             size = int(str(prm.get("transform", "")).split("_")[-1]) if prm.get("transform", "") else 224
         except (ValueError, IndexError):
             size = 224
-        batch = min(int(prm.get("batch", 1)), self.max_batch_size)
+        # Force batch size to 1 for mobile inference benchmarking
+        batch = 1 
         return size, batch, prm
     
     def instantiate_model(self, config: Dict[str, Any], num_classes: int):
@@ -790,9 +791,40 @@ class ContinuousProcessor:
             
             logger.info("✅ Benchmark launched successfully")
             
-            # Wait for completion
-            logger.info("⏳ Waiting 20 seconds for benchmark completion...")
-            time.sleep(20)
+            # Wait for completion with polling
+            logger.info("⏳ Waiting for benchmark completion (polling)...")
+            
+            # The app saves the report to: /storage/emulated/0/Android/data/com.example.App/cache/<model_name>.json
+            # We can check if this file exists.
+            report_filename = f"{model_name}.json"
+            # Note: device_report_dir is /storage/emulated/0/Android/data/com.example.App/cache
+            # But we need to be careful about permissions. run-as might be needed if it was internal storage, 
+            # but external cache should be visible to shell (sometimes).
+            # Actually, let's just try to 'ls' the file.
+            
+            max_wait = 300  # 5 minutes to allow for heavy models
+            start_wait = time.time()
+            benchmark_done = False
+            
+            while time.time() - start_wait < max_wait:
+                # Check if file exists
+                check_cmd = ['shell', 'ls', f"{self.device_report_dir}/{report_filename}"]
+                res = self.run_adb(check_cmd, capture_output=True, text=True)
+                
+                if res.returncode == 0 and report_filename in res.stdout:
+                    logger.info(f"✅ Benchmark finished in {time.time() - start_wait:.1f}s")
+                    benchmark_done = True
+                    break
+                
+                # Log progress every 30 seconds
+                elapsed = time.time() - start_wait
+                if int(elapsed) % 30 == 0 and int(elapsed) > 0:
+                    logger.info(f"   ... still waiting ({elapsed:.0f}s elapsed)")
+                
+                time.sleep(2)
+                
+            if not benchmark_done:
+                logger.warning("⚠️ Benchmark timed out waiting for result file")
             
             # Collect device analytics before retrieving report
             logger.info("📊 Collecting device analytics...")
