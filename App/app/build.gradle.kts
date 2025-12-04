@@ -38,12 +38,14 @@ android {
     kotlinOptions { jvmTarget = "11" }
 
     // Keep .tflite files uncompressed
-    aaptOptions { noCompress("tflite") }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
+    }
+    androidResources {
+        noCompress += listOf("tflite")
     }
 }
 
@@ -76,7 +78,7 @@ dependencies {
     // implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.17.0")
 
     // Optional GPU delegate (enable after CPU path works):
-    // implementation("org.tensorflow:tensorflow-lite-gpu:2.17.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.12.0")
 }
 }
 

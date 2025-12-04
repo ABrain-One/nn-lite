@@ -5,6 +5,9 @@
     <!-- REQUIRED PERMISSION to save the JSON report to the public Downloads folder -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    
+    <!-- WAKE_LOCK permission to prevent app from sleeping during long benchmarks -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
