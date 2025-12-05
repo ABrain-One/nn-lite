@@ -227,13 +227,6 @@ class ContinuousProcessor:
                     "arm_architecture": arm_data
                 }
 
-            # Best-effort detection of compute units (GPU/NPU/CPU names)
-            try:
-                units = self.detect_compute_units()
-                analytics['compute_units'] = units
-            except Exception:
-                analytics['compute_units'] = {}
-
             logger.info("✅ Device analytics collected successfully")
             
         except subprocess.TimeoutExpired:
@@ -844,16 +837,6 @@ class ContinuousProcessor:
                     
                     # Add device analytics to the benchmark report
                     benchmark_data["device_analytics"] = device_analytics
-                    # Add a concise 'unit' field (preference: NPU -> GPU -> CPU)
-                    try:
-                        cu = device_analytics.get('compute_units', {}) if isinstance(device_analytics, dict) else {}
-                        unit = cu.get('npu') or cu.get('gpu') or cu.get('cpu')
-                        if isinstance(unit, list) and unit:
-                            unit = unit[0]
-                        benchmark_data['unit'] = unit
-                    except Exception:
-                        benchmark_data['unit'] = None
-                    
                     # Save the enhanced report
                     with open(local_report, 'w') as f:
                         json.dump(benchmark_data, f, indent=2)
