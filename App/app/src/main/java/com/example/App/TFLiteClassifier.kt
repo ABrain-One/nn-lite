@@ -13,7 +13,7 @@ import kotlin.math.sqrt
 class TFLiteClassifier(
     private val absoluteModelPath: String,
     private val delegateType: DelegateType = DelegateType.CPU,
-    numThreads: Int = 2,
+    numThreads: Int = 4,  // Optimized: increased from 2 to 4 for better multi-core utilization
     private val norm: ModelUtils.NormType = ModelUtils.NormType.IMAGENET_STD
 ) {
     enum class DelegateType { CPU, GPU, NNAPI }
@@ -33,19 +33,26 @@ class TFLiteClassifier(
         }
 
         val options = Interpreter.Options().apply {
-            setNumThreads(numThreads)
             when (delegateType) {
-                DelegateType.CPU -> {} // Default
+                DelegateType.CPU -> {
+                    // CPU Optimization: Use optimal thread count and enable XNNPACK
+                    setNumThreads(numThreads)
+                    setUseXNNPACK(true)  // XNNPACK provides significant speedup on ARM
+                    android.util.Log.d("TFLiteClassifier", "CPU: Using $numThreads threads with XNNPACK enabled")
+                }
                 DelegateType.GPU -> {
-                    // Use explicit GPU delegate options for compatibility
+                    // GPU Optimization: FP16 precision + quantized models + sustained speed
                     val gpuOptions = GpuDelegate.Options().apply {
-                        setPrecisionLossAllowed(true) // Allow FP16 for better performance
+                        setPrecisionLossAllowed(true)  // Allow FP16 for better performance
+                        setQuantizedModelsAllowed(true)  // Enable INT8 quantized model support
                         setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED)
                     }
                     gpuDelegate = GpuDelegate(gpuOptions)
                     addDelegate(gpuDelegate)
+                    android.util.Log.d("TFLiteClassifier", "GPU: FP16 + quantized models enabled, sustained speed mode")
                 }
                 DelegateType.NNAPI -> {
+                    // Use default NNAPI delegate - model has INT64 ops that require default handling
                     nnApiDelegate = NnApiDelegate()
                     addDelegate(nnApiDelegate)
                 }
