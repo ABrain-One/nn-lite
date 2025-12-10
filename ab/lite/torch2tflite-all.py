@@ -761,18 +761,50 @@ class ContinuousProcessor:
             task_model_dir = self.reports_dir / f"{task}_{model_name}"
             task_model_dir.mkdir(parents=True, exist_ok=True)
             
-            # Push model to device
-            logger.info(f"📤 Pushing model to device: {model_name}")
-            push_result = self.run_adb(['push', str(tflite_file), f"{self.device_model_dir}/{model_name}.tflite"], capture_output=True, text=True)
+            # Push model to device with retry mechanism
+            max_push_attempts = 3
+            push_success = False
             
-            if push_result.returncode != 0:
-                logger.error(f"❌ Failed to push model: {push_result.stderr}")
+            for attempt in range(1, max_push_attempts + 1):
+                logger.info(f"📤 Pushing model to device: {model_name} (attempt {attempt}/{max_push_attempts})")
+                push_result = self.run_adb(['push', str(tflite_file), f"{self.device_model_dir}/{model_name}.tflite"], capture_output=True, text=True)
+                
+                if push_result.returncode != 0:
+                    logger.warning(f"⚠️ Push attempt {attempt} failed: {push_result.stderr}")
+                    if attempt < max_push_attempts:
+                        logger.info(f"⏳ Waiting 5 seconds before retry...")
+                        time.sleep(5)
+                    continue
+                
+                # Verify the file was actually pushed successfully
+                time.sleep(1)  # Brief pause before verification
+                verify_result = self.run_adb(['shell', 'ls', '-la', f"{self.device_model_dir}/{model_name}.tflite"], capture_output=True, text=True)
+                
+                if verify_result.returncode == 0 and model_name in verify_result.stdout:
+                    logger.info(f"✅ Model pushed and verified successfully")
+                    push_success = True
+                    break
+                else:
+                    logger.warning(f"⚠️ Verification attempt {attempt} failed - file not found on device")
+                    if attempt < max_push_attempts:
+                        logger.info(f"⏳ Waiting 5 seconds before retry...")
+                        time.sleep(5)
+            
+            if not push_success:
+                logger.error(f"❌ Failed to push model after {max_push_attempts} attempts")
                 return False
-            
-            logger.info("✅ Model pushed successfully")
             
             # Stop previous instance
             self.run_adb(['shell', 'am', 'force-stop', self.package_name], capture_output=True)
+            
+            # Verify file still exists before launch (catch any race conditions)
+            device_model_path = f"{self.device_model_dir}/{model_name}.tflite"
+            pre_launch_check = self.run_adb(['shell', 'ls', device_model_path], capture_output=True, text=True)
+            if pre_launch_check.returncode != 0:
+                logger.error(f"❌ Model file disappeared before launch! Re-pushing...")
+                # Emergency re-push
+                self.run_adb(['push', str(tflite_file), device_model_path], capture_output=True, text=True)
+                time.sleep(2)  # Wait for file to stabilize
             
             # Launch benchmark
             logger.info("🎯 Launching benchmark...")

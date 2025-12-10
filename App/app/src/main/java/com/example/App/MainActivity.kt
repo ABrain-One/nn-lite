@@ -13,13 +13,12 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.system.measureNanoTime
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.max
-// *** THIS IS THE LINE THAT WAS ADDED TO FIX THE ERROR ***
-import kotlin.system.measureTimeMillis
 import android.os.PowerManager
 import android.content.Context
 
@@ -90,43 +89,80 @@ class MainActivity : AppCompatActivity() {
 
             val results = JSONObject()
 
+            // Verify model file exists ONCE before running any benchmarks
+            val modelFile = File(modelDevicePath)
+            if (!modelFile.exists()) {
+                Log.e(TAG, "❌ Model file does not exist at path: $modelDevicePath")
+                val errorObj = JSONObject()
+                errorObj.put("error", "Model file not found on device")
+                results.put("CPU", errorObj)
+                results.put("GPU", errorObj)
+                results.put("NPU", errorObj)
+                reportJson.put("results", results)
+                reportJson.put("duration", -1)
+                reportJson.put("valid", false)
+                saveJsonReport(modelFileName, reportJson)
+                
+                withContext(Dispatchers.Main) {
+                    statusText.text = "❌ Model file not found on device"
+                    progressBar.isVisible = false
+                }
+                return@launch
+            }
+            Log.d(TAG, "✓ Model file verified: ${modelFile.absolutePath} (${modelFile.length()} bytes)")
+
             for ((name, type) in delegates) {
                 try {
                     withContext(Dispatchers.Main) {
                         statusText.text = "Running $name benchmark..."
                     }
 
-                    // Verify model file exists before attempting to load
-                    val modelFile = File(modelDevicePath)
-                    if (!modelFile.exists()) {
-                        throw Exception("Model file does not exist at path: $modelDevicePath")
+                    // Timeout: 90s for CPU, 60s for GPU/NPU
+                    val timeoutMs = if (type == TFLiteClassifier.DelegateType.CPU) 90000L else 60000L
+                    
+                    // Run benchmark with timeout using CompletableDeferred
+                    val result = CompletableDeferred<Long?>()
+                    
+                    // Launch blocking work in a separate coroutine
+                    val job = launch(Dispatchers.Default) {
+                        try {
+                            val classifier = TFLiteClassifier(modelDevicePath, delegateType = type)
+                            classifier.embed(inputBitmap) // Warmup
+                            val startTime = System.nanoTime()
+                            classifier.embed(inputBitmap)
+                            val totalNs = System.nanoTime() - startTime
+                            classifier.close()
+                            Log.d(TAG, "SUCCESS: $name Benchmark completed for $modelFileName. Total: ${totalNs}ns")
+                            result.complete(totalNs)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "$name benchmark error: ${e.message}")
+                            result.complete(null)
+                        }
                     }
-                    Log.d(TAG, "✓ Model file verified: ${modelFile.absolutePath} (${modelFile.length()} bytes)")
-
-                    val classifier = TFLiteClassifier(modelDevicePath, delegateType = type)
                     
-                    // Warmup
-                    classifier.embed(inputBitmap)
-
-                    val iterations = 1
-                    val times = LongArray(iterations)
-                    
-                    for (i in 0 until iterations) {
-                        val startTime = System.nanoTime()
-                        classifier.embed(inputBitmap)
-                        val endTime = System.nanoTime()
-                        times[i] = endTime - startTime
+                    // Launch timeout watcher
+                    val timeoutJob = launch {
+                        delay(timeoutMs)
+                        if (!result.isCompleted) {
+                            Log.w(TAG, "⚠️ $name benchmark timed out after ${timeoutMs/1000}s - skipping")
+                            result.complete(null)
+                            job.cancel()
+                        }
                     }
                     
-                    val totalNs = times.sum()
+                    // Wait for result
+                    val benchmarkResult = result.await()
+                    timeoutJob.cancel()
                     
-                    val stats = JSONObject()
-                    stats.put("duration_ns", totalNs)
-                    
-                    results.put(name, stats)
-                    
-                    classifier.close()
-                    Log.d(TAG, "SUCCESS: $name Benchmark completed for $modelFileName. Total: ${totalNs}ns")
+                    if (benchmarkResult != null) {
+                        val stats = JSONObject()
+                        stats.put("duration_ns", benchmarkResult)
+                        results.put(name, stats)
+                    } else {
+                        val errorObj = JSONObject()
+                        errorObj.put("error", "timeout or failed")
+                        results.put(name, errorObj)
+                    }
 
                 } catch (e: Throwable) {
                     Log.e(TAG, "Error running $name benchmark", e)
@@ -136,7 +172,19 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            reportJson.put("results", results)
+
+            
+            // Add global duration fields as requested
+            if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
+                reportJson.put("cpu_duration", results.getJSONObject("CPU").getLong("duration_ns"))
+            }
+            if (results.has("GPU") && !results.getJSONObject("GPU").has("error")) {
+                reportJson.put("gpu_duration", results.getJSONObject("GPU").getLong("duration_ns"))
+            }
+            if (results.has("NPU") && !results.getJSONObject("NPU").has("error")) {
+                reportJson.put("npu_duration", results.getJSONObject("NPU").getLong("duration_ns"))
+            }
+
             // Keep the old duration field for backward compatibility (using CPU total)
             if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
                 reportJson.put("duration", results.getJSONObject("CPU").getLong("duration_ns"))
