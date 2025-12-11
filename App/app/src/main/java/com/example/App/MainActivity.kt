@@ -117,23 +117,57 @@ class MainActivity : AppCompatActivity() {
                         statusText.text = "Running $name benchmark..."
                     }
 
-                    // Timeout: 90s for CPU, 60s for GPU/NPU
-                    val timeoutMs = if (type == TFLiteClassifier.DelegateType.CPU) 90000L else 60000L
+                    // Timeout: 120s for CPU, 90s for GPU/NPU (increased for multiple iterations)
+                    val timeoutMs = if (type == TFLiteClassifier.DelegateType.CPU) 120000L else 90000L
                     
                     // Run benchmark with timeout using CompletableDeferred
-                    val result = CompletableDeferred<Long?>()
+                    val result = CompletableDeferred<JSONObject?>()
                     
                     // Launch blocking work in a separate coroutine
                     val job = launch(Dispatchers.Default) {
                         try {
                             val classifier = TFLiteClassifier(modelDevicePath, delegateType = type)
                             classifier.embed(inputBitmap) // Warmup
-                            val startTime = System.nanoTime()
-                            classifier.embed(inputBitmap)
-                            val totalNs = System.nanoTime() - startTime
+                            
+                            val iterations = 25
+                            val durations = LongArray(iterations)
+                            var successCount = 0
+                            
+                            for (i in 0 until iterations) {
+                                val startTime = System.nanoTime()
+                                classifier.embed(inputBitmap)
+                                val duration = System.nanoTime() - startTime
+                                durations[i] = duration
+                                successCount++
+                            }
+                            
                             classifier.close()
-                            Log.d(TAG, "SUCCESS: $name Benchmark completed for $modelFileName. Total: ${totalNs}ns")
-                            result.complete(totalNs)
+                            
+                            if (successCount > 0) {
+                                val min = durations.minOrNull() ?: 0L
+                                val max = durations.maxOrNull() ?: 0L
+                                val avg = durations.average()
+                                
+                                // Calculate Standard Deviation
+                                var sumSqDiff = 0.0
+                                for (d in durations) {
+                                    sumSqDiff += Math.pow(d - avg, 2.0)
+                                }
+                                val stdDev = Math.sqrt(sumSqDiff / durations.size)
+                                
+                                val stats = JSONObject()
+                                stats.put("duration_ns", avg.toLong()) // Primary is now Average
+                                stats.put("min_ns", min)
+                                stats.put("max_ns", max)
+                                stats.put("avg_ns", avg)
+                                stats.put("std_dev_ns", stdDev)
+                                stats.put("iterations", successCount)
+                                
+                                Log.d(TAG, "SUCCESS: $name Benchmark completed. Avg: ${avg.toLong()}ns, StdDev: ${stdDev.toLong()}ns")
+                                result.complete(stats)
+                            } else {
+                                result.complete(null)
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "$name benchmark error: ${e.message}")
                             result.complete(null)
@@ -155,9 +189,7 @@ class MainActivity : AppCompatActivity() {
                     timeoutJob.cancel()
                     
                     if (benchmarkResult != null) {
-                        val stats = JSONObject()
-                        stats.put("duration_ns", benchmarkResult)
-                        results.put(name, stats)
+                        results.put(name, benchmarkResult)
                     } else {
                         val errorObj = JSONObject()
                         errorObj.put("error", "timeout or failed")
@@ -174,20 +206,52 @@ class MainActivity : AppCompatActivity() {
 
 
             
-            // Add global duration fields as requested
+            // Add global duration fields as requested (using Average)
             if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
-                reportJson.put("cpu_duration", results.getJSONObject("CPU").getLong("duration_ns"))
+                val cpuStats = results.getJSONObject("CPU")
+                reportJson.put("cpu_duration", cpuStats.getLong("avg_ns")) // Average
+                reportJson.put("cpu_min_duration", cpuStats.getLong("min_ns"))
+                reportJson.put("cpu_max_duration", cpuStats.getLong("max_ns"))
+                reportJson.put("cpu_std_dev", cpuStats.getDouble("std_dev_ns"))
+                reportJson.put("iterations", cpuStats.getInt("iterations"))
             }
             if (results.has("GPU") && !results.getJSONObject("GPU").has("error")) {
-                reportJson.put("gpu_duration", results.getJSONObject("GPU").getLong("duration_ns"))
+                val gpuStats = results.getJSONObject("GPU")
+                reportJson.put("gpu_duration", gpuStats.getLong("avg_ns")) // Average
+                reportJson.put("gpu_min_duration", gpuStats.getLong("min_ns"))
+                reportJson.put("gpu_max_duration", gpuStats.getLong("max_ns"))
+                reportJson.put("gpu_std_dev", gpuStats.getDouble("std_dev_ns"))
             }
             if (results.has("NPU") && !results.getJSONObject("NPU").has("error")) {
-                reportJson.put("npu_duration", results.getJSONObject("NPU").getLong("duration_ns"))
+                val npuStats = results.getJSONObject("NPU")
+                reportJson.put("npu_duration", npuStats.getLong("avg_ns")) // Average
+                reportJson.put("npu_min_duration", npuStats.getLong("min_ns"))
+                reportJson.put("npu_max_duration", npuStats.getLong("max_ns"))
+                reportJson.put("npu_std_dev", npuStats.getDouble("std_dev_ns"))
             }
 
-            // Keep the old duration field for backward compatibility (using CPU total)
+            // Calculate the best (minimum) average duration across all successful delegates
+            var bestAvgDuration = Long.MAX_VALUE
+            var hasValidDuration = false
+
             if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
-                reportJson.put("duration", results.getJSONObject("CPU").getLong("duration_ns"))
+                val duration = results.getJSONObject("CPU").getLong("avg_ns")
+                if (duration < bestAvgDuration) bestAvgDuration = duration
+                hasValidDuration = true
+            }
+            if (results.has("GPU") && !results.getJSONObject("GPU").has("error")) {
+                val duration = results.getJSONObject("GPU").getLong("avg_ns")
+                if (duration < bestAvgDuration) bestAvgDuration = duration
+                hasValidDuration = true
+            }
+            if (results.has("NPU") && !results.getJSONObject("NPU").has("error")) {
+                val duration = results.getJSONObject("NPU").getLong("avg_ns")
+                if (duration < bestAvgDuration) bestAvgDuration = duration
+                hasValidDuration = true
+            }
+
+            if (hasValidDuration) {
+                reportJson.put("duration", bestAvgDuration)
             } else {
                 reportJson.put("duration", -1)
             }
