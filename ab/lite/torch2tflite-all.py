@@ -159,11 +159,17 @@ class ContinuousProcessor:
                         key, value = line.split(':', 1)
                         mem_data[key.strip()] = value.strip()
                 
+                def parse_kb(val):
+                    try:
+                        return int(val.lower().replace('kb', '').strip())
+                    except:
+                        return val
+
                 analytics.update({
-                    "total_ram_kb": mem_data.get('MemTotal', 'Unknown'),
-                    "free_ram_kb": mem_data.get('MemFree', 'Unknown'),
-                    "available_ram_kb": mem_data.get('MemAvailable', 'Unknown'),
-                    "cached_kb": mem_data.get('Cached', 'Unknown')
+                    "total_ram_kb": parse_kb(mem_data.get('MemTotal', '0')),
+                    "free_ram_kb": parse_kb(mem_data.get('MemFree', '0')),
+                    "available_ram_kb": parse_kb(mem_data.get('MemAvailable', '0')),
+                    "cached_kb": parse_kb(mem_data.get('Cached', '0'))
                 })
 
             # Get CPU information - enhanced for both Intel and ARM
@@ -494,7 +500,7 @@ class ContinuousProcessor:
                 # often handles basic PTQ.
                 
                 quantizer = q.PT2EQuantizer().set_global(
-                    q.pt2e_quantizer.get_symmetric_quantization_config(is_per_channel=True, is_qat=False, is_dynamic=False)
+                    q.pt2e_quantizer.get_symmetric_quantization_config(is_per_channel=False, is_qat=False, is_dynamic=False)
                 )
                 quant_config = q.quant_config.QuantConfig(pt2e_quantizer=quantizer)
                 
@@ -906,10 +912,10 @@ class ContinuousProcessor:
                     ordered_keys = [
                         "model_name", "device_type", "os_version", "valid", "emulator",
                         "iterations", 
+                        "duration", "unit",
                         "cpu_duration", "cpu_min_duration", "cpu_max_duration", "cpu_std_dev",
                         "gpu_duration", "gpu_min_duration", "gpu_max_duration", "gpu_std_dev",
-                        "npu_duration", "npu_min_duration", "npu_max_duration", "npu_std_dev",
-                        "duration"
+                        "npu_duration", "npu_min_duration", "npu_max_duration", "npu_std_dev"
                     ] + mem_keys + ["device_analytics"]
                     
                     ordered_data = {}

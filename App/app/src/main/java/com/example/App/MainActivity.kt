@@ -232,28 +232,72 @@ class MainActivity : AppCompatActivity() {
 
             // Calculate the best (minimum) average duration across all successful delegates
             var bestAvgDuration = Long.MAX_VALUE
+            var bestUnit = "Unknown"
             var hasValidDuration = false
+
+            // Helper to get hardware names
+            val cpuName = if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else Build.HARDWARE
+            val gpuName = try {
+                // Quick hack to get GPU renderer without full GLSurfaceView
+                val egl = javax.microedition.khronos.egl.EGLContext.getEGL() as javax.microedition.khronos.egl.EGL10
+                val dpy = egl.eglGetDisplay(javax.microedition.khronos.egl.EGL10.EGL_DEFAULT_DISPLAY)
+                val version = IntArray(2)
+                egl.eglInitialize(dpy, version)
+                val configAttribs = intArrayOf(
+                    javax.microedition.khronos.egl.EGL10.EGL_RENDERABLE_TYPE, 4, // EGL_OPENGL_ES2_BIT
+                    javax.microedition.khronos.egl.EGL10.EGL_SURFACE_TYPE, javax.microedition.khronos.egl.EGL10.EGL_PBUFFER_BIT,
+                    javax.microedition.khronos.egl.EGL10.EGL_NONE
+                )
+                val configs = arrayOfNulls<javax.microedition.khronos.egl.EGLConfig>(1)
+                val numConfigs = IntArray(1)
+                egl.eglChooseConfig(dpy, configAttribs, configs, 1, numConfigs)
+                val ctxAttribs = intArrayOf(0x3098, 2, javax.microedition.khronos.egl.EGL10.EGL_NONE) // EGL_CONTEXT_CLIENT_VERSION
+                val ctx = egl.eglCreateContext(dpy, configs[0], javax.microedition.khronos.egl.EGL10.EGL_NO_CONTEXT, ctxAttribs)
+                val surfAttribs = intArrayOf(javax.microedition.khronos.egl.EGL10.EGL_WIDTH, 1, javax.microedition.khronos.egl.EGL10.EGL_HEIGHT, 1, javax.microedition.khronos.egl.EGL10.EGL_NONE)
+                val surf = egl.eglCreatePbufferSurface(dpy, configs[0], surfAttribs)
+                egl.eglMakeCurrent(dpy, surf, surf, ctx)
+                val renderer = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER)
+                egl.eglMakeCurrent(dpy, javax.microedition.khronos.egl.EGL10.EGL_NO_SURFACE, javax.microedition.khronos.egl.EGL10.EGL_NO_SURFACE, javax.microedition.khronos.egl.EGL10.EGL_NO_CONTEXT)
+                egl.eglDestroySurface(dpy, surf)
+                egl.eglDestroyContext(dpy, ctx)
+                egl.eglTerminate(dpy)
+                renderer ?: "GPU"
+            } catch (e: Exception) {
+                "GPU"
+            }
+            val npuName = "$cpuName NPU" // Best effort for NPU name
 
             if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
                 val duration = results.getJSONObject("CPU").getLong("avg_ns")
-                if (duration < bestAvgDuration) bestAvgDuration = duration
+                if (duration < bestAvgDuration) {
+                    bestAvgDuration = duration
+                    bestUnit = cpuName
+                }
                 hasValidDuration = true
             }
             if (results.has("GPU") && !results.getJSONObject("GPU").has("error")) {
                 val duration = results.getJSONObject("GPU").getLong("avg_ns")
-                if (duration < bestAvgDuration) bestAvgDuration = duration
+                if (duration < bestAvgDuration) {
+                    bestAvgDuration = duration
+                    bestUnit = gpuName
+                }
                 hasValidDuration = true
             }
             if (results.has("NPU") && !results.getJSONObject("NPU").has("error")) {
                 val duration = results.getJSONObject("NPU").getLong("avg_ns")
-                if (duration < bestAvgDuration) bestAvgDuration = duration
+                if (duration < bestAvgDuration) {
+                    bestAvgDuration = duration
+                    bestUnit = npuName
+                }
                 hasValidDuration = true
             }
 
             if (hasValidDuration) {
                 reportJson.put("duration", bestAvgDuration)
+                reportJson.put("unit", bestUnit)
             } else {
                 reportJson.put("duration", -1)
+                reportJson.put("unit", "None")
             }
 
             saveJsonReport(modelFileName, reportJson)
