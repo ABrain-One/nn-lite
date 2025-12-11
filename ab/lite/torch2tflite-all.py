@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Tuple
 import torch
 import ai_edge_torch
 from ab.nn.api import data
+from ab.lite.data_loader import RepresentativeDataset
+import ai_edge_torch.quantize as q
 import importlib
 import logging
 import traceback
@@ -141,7 +143,7 @@ class ContinuousProcessor:
         """Collect device analytics including RAM and CPU information"""
         analytics = {
             "timestamp": time.time(),
-            "memory_info": {},
+            # "memory_info": flattened below
             "cpu_info": {}
         }
         
@@ -157,12 +159,12 @@ class ContinuousProcessor:
                         key, value = line.split(':', 1)
                         mem_data[key.strip()] = value.strip()
                 
-                analytics["memory_info"] = {
+                analytics.update({
                     "total_ram_kb": mem_data.get('MemTotal', 'Unknown'),
                     "free_ram_kb": mem_data.get('MemFree', 'Unknown'),
                     "available_ram_kb": mem_data.get('MemAvailable', 'Unknown'),
                     "cached_kb": mem_data.get('Cached', 'Unknown')
-                }
+                })
 
             # Get CPU information - enhanced for both Intel and ARM
             cpu_result = self.run_adb(['shell', 'cat', '/proc/cpuinfo'], capture_output=True, text=True, timeout=10)
@@ -478,16 +480,38 @@ class ContinuousProcessor:
             wrapped_model.eval()
             sample_input = torch.randn(min(batch, 4), size, size, 3)
             
-            with torch.no_grad():
-                edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
+            # Quantization configuration
+            #quant_enabled = os.environ.get('QUANTIZE', '0') == '1'
+            quant_enabled = True
+            dataset_dir = os.environ.get('DATASET_DIR', './samples')
             
-            output_file = self.tflite_dir / f"{model_name}.tflite"
+            if quant_enabled:
+                logger.info(f"Using Int8 Quantization with data from {dataset_dir}")
+                # loader = RepresentativeDataset(dataset_dir, size=size, batch_size=min(batch, 4))
+                # Note: For now we rely on ai_edge_torch's default calibration or just the config.
+                # If a representative dataset is strictly required by the API version installed, 
+                # it should be passed. Current ai_edge_torch.convert signature with quant_config 
+                # often handles basic PTQ.
+                
+                quantizer = q.PT2EQuantizer().set_global(
+                    q.pt2e_quantizer.get_symmetric_quantization_config(is_per_channel=True, is_qat=False, is_dynamic=False)
+                )
+                quant_config = q.quant_config.QuantConfig(pt2e_quantizer=quantizer)
+                
+                with torch.no_grad():
+                     edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,), quant_config=quant_config)
+            else:
+                with torch.no_grad():
+                    edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
+            
+            output_filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"
+            output_file = self.tflite_dir / output_filename
             edge_model.export(str(output_file))
             
             del model, wrapped_model, edge_model
             self.cleanup_memory()
             
-            logger.info(f"✅ Converted: {model_name}")
+            logger.info(f"✅ Converted: {model_name} -> {output_filename}")
             return True
             
         except Exception as e:
@@ -744,7 +768,10 @@ class ContinuousProcessor:
     def run_benchmark(self, model_name: str) -> bool:
         """Run benchmark on Android device and retrieve results"""
         try:
-            tflite_file = self.tflite_dir / f"{model_name}.tflite"
+            quant_enabled = os.environ.get('QUANTIZE', '0') == '1'
+            filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"
+            tflite_file = self.tflite_dir / filename
+            
             if not tflite_file.exists():
                 logger.error(f"❌ TFLite file not found: {tflite_file}")
                 return False
@@ -766,8 +793,8 @@ class ContinuousProcessor:
             push_success = False
             
             for attempt in range(1, max_push_attempts + 1):
-                logger.info(f"📤 Pushing model to device: {model_name} (attempt {attempt}/{max_push_attempts})")
-                push_result = self.run_adb(['push', str(tflite_file), f"{self.device_model_dir}/{model_name}.tflite"], capture_output=True, text=True)
+                logger.info(f"📤 Pushing model to device: {filename} (attempt {attempt}/{max_push_attempts})")
+                push_result = self.run_adb(['push', str(tflite_file), f"{self.device_model_dir}/{filename}"], capture_output=True, text=True)
                 
                 if push_result.returncode != 0:
                     logger.warning(f"⚠️ Push attempt {attempt} failed: {push_result.stderr}")
@@ -778,9 +805,9 @@ class ContinuousProcessor:
                 
                 # Verify the file was actually pushed successfully
                 time.sleep(1)  # Brief pause before verification
-                verify_result = self.run_adb(['shell', 'ls', '-la', f"{self.device_model_dir}/{model_name}.tflite"], capture_output=True, text=True)
+                verify_result = self.run_adb(['shell', 'ls', '-la', f"{self.device_model_dir}/{filename}"], capture_output=True, text=True)
                 
-                if verify_result.returncode == 0 and model_name in verify_result.stdout:
+                if verify_result.returncode == 0 and filename in verify_result.stdout:
                     logger.info(f"✅ Model pushed and verified successfully")
                     push_success = True
                     break
@@ -798,7 +825,7 @@ class ContinuousProcessor:
             self.run_adb(['shell', 'am', 'force-stop', self.package_name], capture_output=True)
             
             # Verify file still exists before launch (catch any race conditions)
-            device_model_path = f"{self.device_model_dir}/{model_name}.tflite"
+            device_model_path = f"{self.device_model_dir}/{filename}"
             pre_launch_check = self.run_adb(['shell', 'ls', device_model_path], capture_output=True, text=True)
             if pre_launch_check.returncode != 0:
                 logger.error(f"❌ Model file disappeared before launch! Re-pushing...")
@@ -808,7 +835,7 @@ class ContinuousProcessor:
             
             # Launch benchmark
             logger.info("🎯 Launching benchmark...")
-            launch_result = self.run_adb(['shell', 'am', 'start', '-n', f"{self.package_name}/.MainActivity", '--es', 'model_filename', f"{model_name}.tflite"], capture_output=True, text=True)
+            launch_result = self.run_adb(['shell', 'am', 'start', '-n', f"{self.package_name}/.MainActivity", '--es', 'model_filename', filename], capture_output=True, text=True)
             
             if launch_result.returncode != 0:
                 logger.error(f"❌ Failed to launch benchmark: {launch_result.stderr}")
@@ -821,7 +848,7 @@ class ContinuousProcessor:
             
             # The app saves the report to: /storage/emulated/0/Android/data/com.example.App/cache/<model_name>.json
             # We can check if this file exists.
-            report_filename = f"{model_name}.json"
+            report_filename = filename.replace(".tflite", ".json")
             # Note: device_report_dir is /storage/emulated/0/Android/data/com.example.App/cache
             # But we need to be careful about permissions. run-as might be needed if it was internal storage, 
             # but external cache should be visible to shell (sometimes).
@@ -856,7 +883,7 @@ class ContinuousProcessor:
             device_analytics = self.collect_device_analytics()
             
             # Retrieve report with new structure
-            device_report = f"{self.device_report_dir}/{model_name}.json"
+            device_report = f"{self.device_report_dir}/{report_filename}"
             local_report = task_model_dir / f"android_{avd_name}.json"
             
             pull_result = self.run_adb(['pull', device_report, str(local_report)], capture_output=True, text=True)
@@ -867,11 +894,35 @@ class ContinuousProcessor:
                     with open(local_report, 'r') as f:
                         benchmark_data = json.load(f)
                     
-                    # Add device analytics to the benchmark report
-                    benchmark_data["device_analytics"] = device_analytics
-                    # Save the enhanced report
+                    # Extract memory fields to top level
+                    mem_keys = ["total_ram_kb", "free_ram_kb", "available_ram_kb", "cached_kb"]
+                    for key in mem_keys:
+                        if key in device_analytics:
+                            benchmark_data[key] = device_analytics.pop(key)
+                    
+                    benchmark_data['device_analytics'] = device_analytics
+                    
+                    # Enforce specific key order
+                    ordered_keys = [
+                        "model_name", "device_type", "os_version", "valid", "emulator",
+                        "iterations", 
+                        "cpu_duration", "cpu_min_duration", "cpu_max_duration", "cpu_std_dev",
+                        "gpu_duration", "gpu_min_duration", "gpu_max_duration", "gpu_std_dev",
+                        "npu_duration", "npu_min_duration", "npu_max_duration", "npu_std_dev",
+                        "duration"
+                    ] + mem_keys + ["device_analytics"]
+                    
+                    ordered_data = {}
+                    # Add priority keys first
+                    for key in ordered_keys:
+                        if key in benchmark_data:
+                            ordered_data[key] = benchmark_data.pop(key)
+                    
+                    # Add any remaining keys (e.g. from future updates)
+                    ordered_data.update(benchmark_data)
+                    
                     with open(local_report, 'w') as f:
-                        json.dump(benchmark_data, f, indent=2)
+                        json.dump(ordered_data, f, indent=2)
                     
                     logger.info("✅ Device analytics added to benchmark report")
                     
@@ -879,7 +930,7 @@ class ContinuousProcessor:
                     logger.warning(f"⚠️ Could not enhance report with analytics: {e}")
             
             # Cleanup device
-            self.run_adb(['shell', 'rm', f"{self.device_model_dir}/{model_name}.tflite", device_report], capture_output=True)
+            self.run_adb(['shell', 'rm', f"{self.device_model_dir}/{filename}", device_report], capture_output=True)
             
             if pull_result.returncode == 0 and local_report.exists():
                 logger.info(f"✅ Benchmark completed and report retrieved: {model_name}")
