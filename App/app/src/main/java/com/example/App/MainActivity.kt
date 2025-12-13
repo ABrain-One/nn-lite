@@ -21,6 +21,7 @@ import java.io.File
 import kotlin.math.max
 import android.os.PowerManager
 import android.content.Context
+import org.tensorflow.lite.Interpreter
 
 class MainActivity : AppCompatActivity() {
 
@@ -65,7 +66,7 @@ class MainActivity : AppCompatActivity() {
             reportJson.put("os_version", ANDROID_STUDIO_VERSION)
             reportJson.put("valid", true) // Always reports success
             reportJson.put("emulator", Build.FINGERPRINT.startsWith("generic") || Build.MODEL.contains("sdk") || Build.MODEL.contains("emulator"))
-
+            
             withContext(Dispatchers.Main) {
                 modelNameText.text = modelFileName?.removeSuffix(".tflite") ?: "Unknown Model"
                 statusText.text = "Benchmark in progress..."
@@ -78,6 +79,15 @@ class MainActivity : AppCompatActivity() {
             }
 
             val modelDevicePath = "$DEVICE_MODEL_DIRECTORY/$modelFileName"
+            
+            // Extract and add input tensor dimensions
+            val tensorShape = getInputTensorDimensions(modelDevicePath)
+            if (tensorShape != null) {
+                for (i in tensorShape.indices) {
+                    reportJson.put("in_dim_$i", tensorShape[i])
+                }
+            }
+            
             val inputBitmap = decodeResBitmapSafe(DUMMY_IMAGE_RES_ID, 512)
                 ?: throw Exception("Failed to decode the dummy input image.")
 
@@ -203,8 +213,6 @@ class MainActivity : AppCompatActivity() {
                     results.put(name, errorObj)
                 }
             }
-
-
             
             // Add global duration fields as requested (using Average)
             if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
@@ -214,20 +222,31 @@ class MainActivity : AppCompatActivity() {
                 reportJson.put("cpu_max_duration", cpuStats.getLong("max_ns"))
                 reportJson.put("cpu_std_dev", cpuStats.getDouble("std_dev_ns"))
                 reportJson.put("iterations", cpuStats.getInt("iterations"))
+            } else if (results.has("CPU") && results.getJSONObject("CPU").has("error")) {
+                // Add error field for CPU
+                reportJson.put("cpu_error", results.getJSONObject("CPU").getString("error"))
             }
+            
             if (results.has("GPU") && !results.getJSONObject("GPU").has("error")) {
                 val gpuStats = results.getJSONObject("GPU")
                 reportJson.put("gpu_duration", gpuStats.getLong("avg_ns")) // Average
                 reportJson.put("gpu_min_duration", gpuStats.getLong("min_ns"))
                 reportJson.put("gpu_max_duration", gpuStats.getLong("max_ns"))
                 reportJson.put("gpu_std_dev", gpuStats.getDouble("std_dev_ns"))
+            } else if (results.has("GPU") && results.getJSONObject("GPU").has("error")) {
+                // Add error field for GPU
+                reportJson.put("gpu_error", results.getJSONObject("GPU").getString("error"))
             }
+            
             if (results.has("NPU") && !results.getJSONObject("NPU").has("error")) {
                 val npuStats = results.getJSONObject("NPU")
                 reportJson.put("npu_duration", npuStats.getLong("avg_ns")) // Average
                 reportJson.put("npu_min_duration", npuStats.getLong("min_ns"))
                 reportJson.put("npu_max_duration", npuStats.getLong("max_ns"))
                 reportJson.put("npu_std_dev", npuStats.getDouble("std_dev_ns"))
+            } else if (results.has("NPU") && results.getJSONObject("NPU").has("error")) {
+                // Add error field for NPU
+                reportJson.put("npu_error", results.getJSONObject("NPU").getString("error"))
             }
 
             // Calculate the best (minimum) average duration across all successful delegates
@@ -367,5 +386,18 @@ class MainActivity : AppCompatActivity() {
             val opt2 = BitmapFactory.Options().apply { inSampleSize = sample }
             return BitmapFactory.decodeResource(resources, resId, opt2)
         } catch (_: Throwable) { return null }
+    }
+
+    private fun getInputTensorDimensions(modelPath: String): IntArray? {
+        return try {
+            val modelFile = File(modelPath)
+            val interpreter = Interpreter(modelFile)
+            val inputShape = interpreter.getInputTensor(0).shape()
+            interpreter.close()
+            inputShape
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get input tensor dimensions: ${e.message}")
+            null
+        }
     }
 }
