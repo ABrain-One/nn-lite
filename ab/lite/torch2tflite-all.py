@@ -488,29 +488,41 @@ class ContinuousProcessor:
             
             # Quantization configuration
             #quant_enabled = os.environ.get('QUANTIZE', '0') == '1'
-            quant_enabled = True
-            dataset_dir = os.environ.get('DATASET_DIR', './samples')
+            # quant_enabled = True  # ← COMMENTED OUT - Quantization disabled
+            quant_enabled = False  # Using FP32 (no quantization)
+            # dataset_dir = os.environ.get('DATASET_DIR', './samples')
             
+            # ===== 8-BIT QUANTIZATION CODE (COMMENTED OUT) =====
+            # if quant_enabled:
+            #     logger.info(f"Using Int8 Quantization with data from {dataset_dir}")
+            #     loader = RepresentativeDataset(dataset_dir, size=size, batch_size=min(batch, 4))
+            #     # Note: For now we rely on ai_edge_torch's default calibration or just the config.
+            #     # If a representative dataset is strictly required by the API version installed, 
+            #     # it should be passed. Current ai_edge_torch.convert signature with quant_config 
+            #     # often handles basic PTQ.
+            #     
+            #     quantizer = q.PT2EQuantizer().set_global(
+            #         q.pt2e_quantizer.get_symmetric_quantization_config(is_per_channel=False, is_qat=False, is_dynamic=False)
+            #     )
+            #     quant_config = q.quant_config.QuantConfig(pt2e_quantizer=quantizer)
+            #     
+            #     with torch.no_grad():
+            #          edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,), quant_config=quant_config)
+            # else:
+            #     with torch.no_grad():
+            #         edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
+            # ===== END QUANTIZATION CODE =====
+            
+            # Convert model without quantization (FP32)
             if quant_enabled:
-                logger.info(f"Using Int8 Quantization with data from {dataset_dir}")
-                # loader = RepresentativeDataset(dataset_dir, size=size, batch_size=min(batch, 4))
-                # Note: For now we rely on ai_edge_torch's default calibration or just the config.
-                # If a representative dataset is strictly required by the API version installed, 
-                # it should be passed. Current ai_edge_torch.convert signature with quant_config 
-                # often handles basic PTQ.
-                
-                quantizer = q.PT2EQuantizer().set_global(
-                    q.pt2e_quantizer.get_symmetric_quantization_config(is_per_channel=False, is_qat=False, is_dynamic=False)
-                )
-                quant_config = q.quant_config.QuantConfig(pt2e_quantizer=quantizer)
-                
-                with torch.no_grad():
-                     edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,), quant_config=quant_config)
+                logger.info(f"Using Int8 Quantization")
+                # This won't run since quant_enabled = False
             else:
                 with torch.no_grad():
                     edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
             
-            output_filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"
+            # output_filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"  # Old with _int8 suffix
+            output_filename = f"{model_name}.tflite"  # No _int8 suffix (quantization disabled)
             output_file = self.tflite_dir / output_filename
             edge_model.export(str(output_file))
             
@@ -774,8 +786,9 @@ class ContinuousProcessor:
     def run_benchmark(self, model_name: str) -> bool:
         """Run benchmark on Android device and retrieve results"""
         try:
-            quant_enabled = os.environ.get('QUANTIZE', '0') == '1'
-            filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"
+            # quant_enabled = os.environ.get('QUANTIZE', '0') == '1'  # Not needed anymore
+            # filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"  # Old with _int8 suffix
+            filename = f"{model_name}.tflite"  # No _int8 suffix (quantization disabled)
             tflite_file = self.tflite_dir / filename
             
             if not tflite_file.exists():
@@ -916,13 +929,22 @@ class ContinuousProcessor:
                         "cpu_duration", "cpu_min_duration", "cpu_max_duration", "cpu_std_dev",
                         "gpu_duration", "gpu_min_duration", "gpu_max_duration", "gpu_std_dev",
                         "npu_duration", "npu_min_duration", "npu_max_duration", "npu_std_dev"
-                    ] + mem_keys + ["device_analytics"]
+                    ] + mem_keys
                     
                     ordered_data = {}
                     # Add priority keys first
                     for key in ordered_keys:
                         if key in benchmark_data:
                             ordered_data[key] = benchmark_data.pop(key)
+                    
+                    # Add input dimension fields (in_dim_*) before device_analytics
+                    in_dim_keys = sorted([k for k in benchmark_data.keys() if k.startswith("in_dim_")])
+                    for key in in_dim_keys:
+                        ordered_data[key] = benchmark_data.pop(key)
+                    
+                    # Add device_analytics
+                    if "device_analytics" in benchmark_data:
+                        ordered_data["device_analytics"] = benchmark_data.pop("device_analytics")
                     
                     # Add any remaining keys (e.g. from future updates)
                     ordered_data.update(benchmark_data)
