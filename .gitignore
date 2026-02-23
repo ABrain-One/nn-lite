@@ -1,0 +1,14 @@
+# Python junk
+__pycache__/
+venv/
+*.pyc
+
+nn-dataset/_work/
+nn-dataset/ab/nn/stat/run/
+
+# Large binaries (Weights and Models)
+*.pth
+*.tflite
+
+# OS junk
+.DS_Store
