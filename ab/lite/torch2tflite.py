@@ -1,232 +1,226 @@
-import os
-import sys
-import json
-import stat
+#!/usr/bin/env python3
+import sys, os, argparse, json, re, subprocess, importlib.util, shutil, time, gc
 from pathlib import Path
-from ab.nn.api import check_nn, data
-import importlib.util, torch, ai_edge_torch
-import inspect
 
-# Force CPU usage to avoid JAX device conflicts
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
-os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+# --- CONFIGURATION ---
+SOURCE_REPO = "NN-Dataset/checkpoints-epoch-50"
+RESTART_EVERY_N_MODELS = 50 
+COOL_DOWN_MODEL = 2        
+COOL_DOWN_SESSION = 60     
+# ---------------------
 
-# Add the project root to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
-sys.path.insert(0, project_root)
+# --- PATH SETUP ---
+script_path = Path(__file__).resolve()
+project_root = script_path.parents[3]
+dataset_root = project_root / "nn-dataset"
 
-tflite_dir = Path('./exports_tflite')
-tflite_dir.mkdir(parents=True, exist_ok=True)
+# New Target Directories
+stat_base = dataset_root / "ab" / "nn" / "stat" / "run" /  "tflite"
+int8_dir = stat_base / "int8"
+fp32_dir = stat_base / "fp32"
 
-# Create directory for JSON files in the project path with proper permissions
-json_base_dir = Path(project_root) / 'ab/nn/stat/train'
+work_dir = dataset_root / "_work"
+data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
+# We keep state_file in work_dir to manage the overall progress
+state_file = work_dir / "processing_state_dual.json"
 
+for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]: 
+    p.mkdir(parents=True, exist_ok=True)
 
-def ensure_directory_exists(path):
-    """Ensure directory exists with proper permissions for all users"""
-    if not path.exists():
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            # Set permissions to allow all users to read, write, and execute
-            path.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
-        except PermissionError as e:
-            print(f"Error creating directory {path}: {e}")
-            print("Please ensure you have write permissions for the project directory")
-            return False
-    return True
+import torch, torchvision, torchvision.transforms as T, ai_edge_torch, tensorflow as tf, numpy as np
+from huggingface_hub import hf_hub_download, list_repo_files
 
+# --- GUARDIAN: USB RECONNECTION LOGIC ---
+def wait_for_device():
+    print("\n[!] USB DISCONNECTED or DEVICE LOST. Waiting for reconnection...")
+    while True:
+        res = subprocess.run(["adb", "get-state"], capture_output=True, text=True)
+        if "device" in res.stdout:
+            print("[OK] Device detected. Re-initializing...")
+            time.sleep(5)
+            subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
+            return
+        time.sleep(10)
 
-def find_tmp_model_file(model_name: str, prefix: str):
-    """Find the generated tmp compiled model file (.pyc) matching model_name and prefix."""
-    # Use the project root path that was added to sys.path
-    project_root = Path(sys.path[0])
-    tmp_dir = project_root / 'out/nn/tmp/__pycache__'
-    
-    print(f"DEBUG: Looking in directory: {tmp_dir}")
-    print(f"DEBUG: Directory exists: {tmp_dir.exists()}")
-    
-    if not tmp_dir.exists():
-        # Try an alternative path
-        tmp_dir_alt = Path('./out/nn/tmp/__pycache__')
-        print(f"DEBUG: Trying alternative directory: {tmp_dir_alt}")
-        print(f"DEBUG: Alternative directory exists: {tmp_dir_alt.exists()}")
-        if tmp_dir_alt.exists():
-            tmp_dir = tmp_dir_alt
-    
-    if not tmp_dir.exists():
-        print(f"DEBUG: Directory {tmp_dir} does not exist")
-        return None
-    
-    # List all files in the directory
-    all_files = list(tmp_dir.iterdir())
-    print(f"DEBUG: All files in {tmp_dir}: {all_files}")
-    
-    # Look for .pyc files that contain the prefix in their name
-    for file in all_files:
-        if file.suffix == '.pyc' and prefix in file.name:
-            print(f"DEBUG: Found match: {file}")
-            return file
-    
-    print(f"DEBUG: No match found for prefix {prefix}")
-    return None
-
-
-def convert_to_serializable(obj):
-    """Convert non-serializable objects to JSON-serializable formats."""
-    if hasattr(obj, 'item'):
-        return obj.item()
-    elif isinstance(obj, dict):
-        return {k: convert_to_serializable(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_to_serializable(item) for item in obj]
-    else:
-        return obj
-
-
-def train_and_export_tflite(model_name: str, min_files: int = 10):
-    # Ensure base directory exists with proper permissions
-    if not ensure_directory_exists(json_base_dir):
-        return []
-
-    # Create model-specific JSON directory
-    json_model_dir = json_base_dir / model_name
-    if not ensure_directory_exists(json_model_dir):
-        return []
-
-    df = data(f"nn == '{model_name}'")
-    if df.empty:
-        raise ValueError(f"No database entries found for model '{model_name}'")
-
-    df_sorted = df.sort_values("duration")
-    exported_files = []
-
-    # Find the next available file number
-    existing_files = list(json_model_dir.glob("*.json"))
-    file_counter = 1
-    if existing_files:
-        # Extract numbers from existing files and find the max
-        numbers = []
-        for file in existing_files:
-            try:
-                numbers.append(int(file.stem))
-            except ValueError:
-                continue
-        if numbers:
-            file_counter = max(numbers) + 1
-
-    for idx, row in df_sorted.head(min_files).iterrows():
-        prm = row["prm"].copy()
-        if "epoch" not in prm:
-            prm["epoch"] = 1
-
-        prefix = f"{model_name}_{idx}"
-
-        # Save only duration in JSON format
-        duration_data = {"duration": convert_to_serializable(row.get("duration"))}
-        
-        # Create JSON file with incremental numbering
-        json_file = json_model_dir / f"{file_counter}.json"
-        try:
-            with open(json_file, 'w') as f:
-                json.dump([duration_data], f, indent=4)
-            # Set permissions to allow all users to read and write
-            json_file.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH)
-            print(f"[SUCCESS] Saved JSON → {json_file}")
-        except PermissionError as e:
-            print(f"Permission denied when writing to {json_file}: {e}")
+def adb_shell(cmd): 
+    while True:
+        res = subprocess.run(["adb", "shell", cmd], capture_output=True, text=True)
+        if res.returncode != 0 and ("device not found" in res.stderr or "lost" in res.stderr):
+            wait_for_device()
             continue
-        
-        # Increment counter for next file
-        file_counter += 1
+        return res.stdout.strip()
 
-        try:
-            check_nn(
-                nn_code=row["nn_code"],
-                task=row["task"],
-                dataset=row["dataset"],
-                metric=row["metric"],
-                prm=prm,
-                prefix=prefix,
-                save_to_db=False,
-                export_onnx=False,
-                epoch_limit_minutes=5 * 60
-            )
-        except Exception as e:
-            print(f"Warning: Training failed for prefix {prefix}: {e}")
-            # Continue to next iteration even if training fails
+# --- METADATA HELPERS ---
+def adb_getprop(key): return adb_shell(f"getprop {key}").splitlines()[-1]
+
+def get_gpu_name():
+    raw = adb_shell("dumpsys SurfaceFlinger | grep GLES")
+    if "Adreno" in raw:
+        parts = raw.split(",")
+        if len(parts) > 1: return parts[1].strip()
+    return "Adreno (TM) 660"
+
+def get_android_memory():
+    mem = {}
+    raw = adb_shell("cat /proc/meminfo")
+    mapping = {"MemTotal": "total_ram_kb", "MemFree": "free_ram_kb", "MemAvailable": "available_ram_kb", "Cached": "cached_kb"}
+    for line in raw.splitlines():
+        parts = line.split(":")
+        if len(parts) == 2:
+            key = parts[0].strip()
+            if key in mapping: mem[mapping[key]] = int(parts[1].strip().split()[0])
+    return mem
+
+def get_device_analytics():
+    raw = adb_shell("cat /proc/cpuinfo")
+    processors = []; current = {}
+    global_meta = {"hardware": "", "features": "", "cpu implementer": "", "cpu architecture": "", "cpu variant": "", "cpu part": "", "cpu revision": ""}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            if current: processors.append(current); current = {}
             continue
+        if ":" in line: 
+            k, v = line.split(":", 1); k, v = k.strip().lower(), v.strip()
+            if k == "processor" and v.isdigit(): current["processor"] = v
+            elif k in global_meta: global_meta[k] = v; current[k] = v
+            else: current[k] = v
+    if current: processors.append(current)
+    soc = adb_getprop("ro.soc.model") or adb_getprop("ro.board.platform")
+    return {"timestamp": time.time(), "cpu_info": {"cpu_cores": len([p for p in processors if 'processor' in p]), "processors": processors[:4], "arm_architecture": {"hardware": global_meta["hardware"] or soc, "features": global_meta["features"], "cpu_implementer": global_meta["cpu implementer"], "cpu_architecture": global_meta["cpu architecture"], "cpu_variant": global_meta["cpu variant"], "cpu_part": global_meta["cpu part"], "cpu_revision": global_meta["cpu revision"]}}}
 
-        tmp_model_path = find_tmp_model_file(model_name, prefix)
-        if not tmp_model_path or not tmp_model_path.exists():
-            print(f"Warning: tmp model not found for prefix {prefix}")
-            continue
+def run_bench(model_path, backend, runs):
+    flag = {"cpu": "--use_xnnpack=false", "gpu": "--use_gpu", "npu": "--use_nnapi"}.get(backend, "")
+    cmd = f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} {flag}"
+    out = adb_shell(cmd)
+    if "ERROR:" in out or "Failed to compute" in out or "avg=" not in out.replace(" ", ""):
+        return {"avg": float('inf'), "min": 0, "max": 0, "std": 0, "status": "failed", "error": "timeout or failed"}
+    res = {"avg": 0.0, "min": 0.0, "max": 0.0, "std": 0.0, "status": "ok"}
+    for key in ["avg", "min", "max", "std"]:
+        match = re.search(rf"{key}=([\d\.]+)", out.replace(" ", ""))
+        if match: res[key] = float(match.group(1)) * 1000.0
+    return res
 
-        try:
-            spec = importlib.util.spec_from_file_location(tmp_model_path.stem, tmp_model_path)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            net_cls = getattr(mod, 'Net')
-
-            image_size = 224
-            num_classes = 1000
-            batch_size = int(prm.get("batch", 1))
-            
-            in_shape = (batch_size, 3, image_size, image_size)
-            out_shape = (batch_size, num_classes)
-            device = "cpu"
-
-            arg_map = {
-                'in_shape': in_shape,
-                'out_shape': out_shape,
-                'num_classes': num_classes,
-                'prm': prm,
-                'device': device
-            }
-
-            constructor_params = inspect.signature(net_cls.__init__).parameters
-            args_to_pass = []
-            for param_name in constructor_params:
-                if param_name in arg_map:
-                    args_to_pass.append(arg_map[param_name])
-                elif param_name != 'self':
-                    raise ValueError(f"Required parameter '{param_name}' not found for model constructor.")
-            
-            model_instance = net_cls(*args_to_pass)
-            model_instance.eval()
-
-            # Create input tensor in NCHW format (batch, channels, height, width)
-            sample = torch.randn(batch_size, 3, image_size, image_size, device=device)
-            
-            tflite_model = ai_edge_torch.convert(model_instance, (sample,))
-            
-            file_name = f"{model_name}_{idx}.tflite"
-            output_file = tflite_dir / file_name
-            tflite_model.export(str(output_file))
-            print(f"[SUCCESS] Exported TFLite → {output_file}")
-            exported_files.append(output_file)
-        except Exception as e:
-            print(f"Error during model conversion for prefix {prefix}: {e}")
-            continue
-
-    return exported_files
-
-
+# --- CORE LOGIC ---
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python test.py <model_name>")
-        sys.exit(1)
+    arch_dir, transforms_dir = dataset_root / "ab" / "nn" / "nn", dataset_root / "ab" / "nn" / "transform"
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--android-runs", type=int, default=20)
+    ap.add_argument("--force", action="store_true")
+    args = ap.parse_args()
 
-    model_name = sys.argv[1]
-    min_files = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    if args.force and state_file.exists(): state_file.unlink()
+    state = json.load(open(state_file)) if state_file.exists() else {"processed": [], "failed": []}
     
-    try:
-        files = train_and_export_tflite(model_name, min_files=min_files)
-        print(f"Generated {len(files)} TFLite files in {tflite_dir}")
-        print(f"JSON files saved in {json_base_dir / model_name}")
-    except ValueError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+    with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
+    
+    subprocess.run(["adb", "start-server"], capture_output=True)
+    subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
+    
+    gpu_full_name = get_gpu_name()
+    device_model = adb_getprop("ro.product.model")
+    device_clean = device_model.replace(" ", "_")
+    os_ver = f"{adb_getprop('ro.build.version.release')} | {adb_getprop('ro.build.id')}"
+    
+    hf_files = list_repo_files(SOURCE_REPO)
+    py_files = sorted([p for p in arch_dir.rglob("*.py") if f"{p.stem}.pth" in hf_files])
+    to_process = [p for p in py_files if p.stem not in set(state["processed"]) and p.stem not in set(state["failed"])]
 
+    print(f"\n[DUAL RUN] Device: {device_model} | Remaining: {len(to_process)}")
 
-if __name__ == "__main__":
-    main()
+    session_counter = 0
+    for idx, py_path in enumerate(to_process, 1):
+        name = py_path.stem
+        time.sleep(COOL_DOWN_MODEL)
+        
+        if session_counter >= RESTART_EVERY_N_MODELS:
+            print(f"\n[THERMAL] Resetting Session...")
+            time.sleep(COOL_DOWN_SESSION)
+            os.execv(sys.executable, [sys.executable, sys.argv[0]] + (["--android-runs", str(args.android_runs)] if "--android-runs" in sys.argv else []))
+
+        print(f"\n[{idx}/{len(to_process)}] Model: {name}")
+        try:
+           # 1. Setup
+            prm = model_db[name].get("prm", {})
+            target_h = 32
+            
+            # Save the name to a variable first
+            tf_name = prm.get('transform', 'default') 
+            tf_file = transforms_dir / f"{tf_name}.py"
+            
+            if tf_file.exists():
+                match = re.search(r"(?:Resize|size|Crop).*?(\d+)", tf_file.read_text(), re.IGNORECASE)
+                if match: 
+                    target_h = int(match.group(1))
+                    # Now tf_name is defined and ready to print!
+                    print(f"   [DEBUG] Transform: {tf_name} -> Res: {target_h}x{target_h}")
+            else:
+                # This now works because tf_name exists
+                print(f"   [DEBUG] Transform file {tf_name}.py not found. Defaulting to 32x32.")
+
+            pth = Path(hf_hub_download(SOURCE_REPO, f"{name}.pth", cache_dir=str(temp_dl_dir)))
+            spec = importlib.util.spec_from_file_location("mod", py_path)
+            mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+            model = mod.Net((1,3,32,32), (10,), prm, "cpu")
+            model.load_state_dict(torch.load(pth, map_location="cpu"), strict=False)
+            model.eval()
+
+            # --- PROCESS FP32 ---
+            print(f"   [PROCESS] FP32 Conversion...")
+            fp32_tflite = temp_dl_dir / f"{name}_fp32.tflite"
+            ai_edge_torch.convert(model, (torch.randn(1, 3, target_h, target_h),)).export(str(fp32_tflite))
+            
+            # --- PROCESS INT8 ---
+            print(f"   [PROCESS] INT8 Conversion...")
+            int8_tflite = temp_dl_dir / f"{name}_int8.tflite"
+            def rep():
+                tfm = T.Compose([T.ToTensor(), T.Resize((target_h, target_h)), T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
+                d = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True, transform=tfm)
+                for j in range(50): yield [d[j][0].unsqueeze(0).numpy()]
+            
+            ai_edge_torch.convert(model, (torch.randn(1, 3, target_h, target_h),), _ai_edge_converter_flags={'optimizations': [tf.lite.Optimize.DEFAULT], 'representative_dataset': rep, 'target_spec': {'supported_ops': [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]}, 'inference_input_type': tf.int8, 'inference_output_type': tf.int8}).export(str(int8_tflite))
+
+            # --- BENCHMARK BOTH ---
+            for mode, tflite_path, save_dir in [("fp32", fp32_tflite, fp32_dir), ("int8", int8_tflite, int8_dir)]:
+                dev_p = f"/data/local/tmp/{name}_{mode}.tflite"
+                subprocess.run(["adb", "push", str(tflite_path), dev_p], capture_output=True)
+                
+                c, g, n = run_bench(dev_p, "cpu", args.android_runs), run_bench(dev_p, "gpu", args.android_runs), run_bench(dev_p, "npu", args.android_runs)
+                adb_shell(f"rm {dev_p}")
+
+                opts = {}
+                if c["status"] == "ok": opts["CPU"] = c["avg"]
+                if g["status"] == "ok": opts[gpu_full_name] = g["avg"]
+                if n["status"] == "ok": opts["NPU"] = n["avg"]
+                winner = min(opts, key=opts.get) if opts else "Failed"
+
+                final_data = {
+                    "model_name": name, "device_type": device_model, "os_version": os_ver,
+                    "valid": True, "emulator": False, "iterations": args.android_runs,
+                    "duration": int(opts[winner]) if winner != "Failed" else 0, "unit": winner,
+                    "cpu_duration": int(c["avg"]), "cpu_min_duration": int(c["min"]), "cpu_max_duration": int(c["max"]), "cpu_std_dev": c["std"],
+                    "gpu_duration": int(g["avg"]), "gpu_min_duration": int(g["min"]), "gpu_max_duration": int(g["max"]), "gpu_std_dev": g["std"],
+                    "npu_duration": int(n["avg"]), "npu_min_duration": int(n["min"]), "npu_max_duration": int(n["max"]), "npu_std_dev": n["std"],
+                    **get_android_memory(), "in_dim_0": 1, "in_dim_1": target_h, "in_dim_2": target_h, "in_dim_3": 3,
+                    "device_analytics": get_device_analytics()
+                }
+                if n["status"] == "failed": final_data["npu_error"] = n["error"]
+                if g["status"] == "failed": final_data["gpu_error"] = g["error"]
+
+                model_folder = save_dir / f"img-classification_cifar-10_acc_{name}"
+                model_folder.mkdir(parents=True, exist_ok=True)
+                with open(model_folder / f"android_{device_clean}.json", "w") as f: json.dump(final_data, f, indent=2)
+
+            print(f"   -> Successfully saved FP32 and INT8 stats.")
+            state["processed"].append(name)
+            json.dump(state, open(state_file, 'w'), indent=2)
+            session_counter += 1
+            gc.collect()
+            if temp_dl_dir.exists(): shutil.rmtree(temp_dl_dir); temp_dl_dir.mkdir()
+            
+        except Exception as e:
+            print(f"   [FAIL] {name}: {e}")
+            state["failed"].append(name)
+            json.dump(state, open(state_file, 'w'), indent=2)
+
+if __name__ == "__main__": main()
