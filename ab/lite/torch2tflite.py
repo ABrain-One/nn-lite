@@ -7,6 +7,10 @@ SOURCE_REPO = "NN-Dataset/checkpoints-epoch-50"
 RESTART_EVERY_N_MODELS = 50 
 COOL_DOWN_MODEL = 2        
 COOL_DOWN_SESSION = 60     
+
+# The benchmark_model binary is now auto-pushed to the device on startup
+# by setup_benchmark_binary(). Place the binary next to this script,
+# in the project root, or in the dataset root.
 # ---------------------
 
 # --- PATH SETUP ---
@@ -49,6 +53,59 @@ def adb_shell(cmd):
             wait_for_device()
             continue
         return res.stdout.strip()
+
+# --- BENCHMARK BINARY SETUP ---
+def setup_benchmark_binary(force=False):
+    """Push benchmark_model to device if not already present and executable.
+    
+    Skips re-pushing if the binary is already on /data/local/tmp/ and runs,
+    which is important across os.execv thermal restarts.
+    """
+    if not force:
+        # Quick check: does it exist and run?
+        check = adb_shell("ls /data/local/tmp/benchmark_model 2>/dev/null && echo OK")
+        if "OK" in check:
+            ver = adb_shell("/data/local/tmp/benchmark_model --version 2>&1 | head -1")
+            if ver and "not found" not in ver.lower() and "permission denied" not in ver.lower():
+                print(f"[SETUP] benchmark_model already on device: {ver}")
+                return
+
+    # Locate the local binary
+    candidates = [
+        script_path.parent / "benchmark_model",
+        project_root / "benchmark_model",
+        dataset_root / "benchmark_model",
+        Path.cwd() / "benchmark_model",
+    ]
+    local_binary = next((c for c in candidates if c.exists()), None)
+    if local_binary is None:
+        raise FileNotFoundError(
+            "benchmark_model binary not found. Place it next to this script "
+            f"or in one of: {[str(c) for c in candidates]}"
+        )
+
+    print(f"[SETUP] Pushing {local_binary} to device...")
+    pushed = False
+    for attempt in range(3):
+        res = subprocess.run(
+            ["adb", "push", str(local_binary), "/data/local/tmp/"],
+            capture_output=True, text=True,
+        )
+        if res.returncode == 0:
+            pushed = True
+            break
+        if "device not found" in res.stderr or "lost" in res.stderr:
+            wait_for_device()
+            continue
+        raise RuntimeError(f"adb push failed: {res.stderr}")
+    if not pushed:
+        raise RuntimeError("adb push failed after 3 attempts")
+
+    print("[SETUP] Setting executable permission...")
+    adb_shell("chmod +x /data/local/tmp/benchmark_model")
+
+    ver = adb_shell("/data/local/tmp/benchmark_model --version 2>&1 | head -1")
+    print(f"[SETUP] Verified: {ver}")
 
 # --- METADATA HELPERS ---
 def adb_getprop(key): return adb_shell(f"getprop {key}").splitlines()[-1]
@@ -93,8 +150,9 @@ def run_bench(model_path, backend, runs):
     flag = {"cpu": "--use_xnnpack=false", "gpu": "--use_gpu", "npu": "--use_nnapi"}.get(backend, "")
     cmd = f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} {flag}"
     out = adb_shell(cmd)
+    #float('inf')
     if "ERROR:" in out or "Failed to compute" in out or "avg=" not in out.replace(" ", ""):
-        return {"avg": float('inf'), "min": 0, "max": 0, "std": 0, "status": "failed", "error": "timeout or failed"}
+        return {"avg": 0, "min": 0, "max": 0, "std": 0, "status": "failed", "error": "timeout or failed"}
     res = {"avg": 0.0, "min": 0.0, "max": 0.0, "std": 0.0, "status": "ok"}
     for key in ["avg", "min", "max", "std"]:
         match = re.search(rf"{key}=([\d\.]+)", out.replace(" ", ""))
@@ -107,6 +165,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--android-runs", type=int, default=20)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--reinstall-bench", action="store_true",
+                    help="Force re-push of benchmark_model binary to device")
     args = ap.parse_args()
 
     if args.force and state_file.exists(): state_file.unlink()
@@ -116,6 +176,9 @@ def main():
     
     subprocess.run(["adb", "start-server"], capture_output=True)
     subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
+    
+    # Auto-push benchmark_model to device (skips if already present)
+    setup_benchmark_binary(force=args.reinstall_bench)
     
     gpu_full_name = get_gpu_name()
     device_model = adb_getprop("ro.product.model")
@@ -162,9 +225,43 @@ def main():
             spec = importlib.util.spec_from_file_location("mod", py_path)
             mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
             model = mod.Net((1,3,32,32), (10,), prm, "cpu")
-            model.load_state_dict(torch.load(pth, map_location="cpu"), strict=False)
+            #model.load_state_dict(torch.load(pth, map_location="cpu"), strict=False)
+            ckpt = torch.load(pth, map_location="cpu")
+            model.load_state_dict(ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt, strict=False)
             model.eval()
 
+            """
+            # 1. Use pure zeros for the initial tracing to prevent explosion
+            dummy_input = (torch.randn(1, 3, target_h, target_h),)
+
+            # --- PROCESS FP32 ---
+            print(f"   [PROCESS] FP32 Conversion...")
+            fp32_tflite = temp_dl_dir / f"{name}_fp32.tflite"
+            ai_edge_torch.convert(model, dummy_input).export(str(fp32_tflite))
+            
+            # --- PROCESS INT8 ---
+            print(f"   [PROCESS] INT8 Conversion...")
+            int8_tflite = temp_dl_dir / f"{name}_int8.tflite"
+            
+            def rep():
+                # 2. FORCED SAFE CALIBRATION: Feed tiny numbers instead of real images.
+                # This stops the math from hitting 'infinity' so the file actually compiles.
+                for j in range(50): 
+                    yield [np.random.uniform(-0.01, 0.01, (1, 3, target_h, target_h)).astype(np.float32)]
+            
+            ai_edge_torch.convert(
+                model, 
+                dummy_input, 
+                _ai_edge_converter_flags={
+                    'optimizations': [tf.lite.Optimize.DEFAULT], 
+                    'representative_dataset': rep, 
+                    'target_spec': {'supported_ops': [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]}, 
+                    'inference_input_type': tf.int8, 
+                    'inference_output_type': tf.int8
+                }
+            ).export(str(int8_tflite))
+
+            
             # --- PROCESS FP32 ---
             print(f"   [PROCESS] FP32 Conversion...")
             fp32_tflite = temp_dl_dir / f"{name}_fp32.tflite"
@@ -174,14 +271,58 @@ def main():
             print(f"   [PROCESS] INT8 Conversion...")
             int8_tflite = temp_dl_dir / f"{name}_int8.tflite"
             def rep():
-                tfm = T.Compose([T.ToTensor(), T.Resize((target_h, target_h)), T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
+                #tfm = T.Compose([T.ToTensor(), T.Resize((target_h, target_h)), T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
+                tfm = T.Compose([T.ToTensor(), T.Resize((target_h, target_h), antialias=True), T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
                 d = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True, transform=tfm)
                 for j in range(50): yield [d[j][0].unsqueeze(0).numpy()]
             
             ai_edge_torch.convert(model, (torch.randn(1, 3, target_h, target_h),), _ai_edge_converter_flags={'optimizations': [tf.lite.Optimize.DEFAULT], 'representative_dataset': rep, 'target_spec': {'supported_ops': [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]}, 'inference_input_type': tf.int8, 'inference_output_type': tf.int8}).export(str(int8_tflite))
 
+            
             # --- BENCHMARK BOTH ---
             for mode, tflite_path, save_dir in [("fp32", fp32_tflite, fp32_dir), ("int8", int8_tflite, int8_dir)]:
+            """
+            # 1. Use pure zeros for the initial tracing to prevent explosion
+            dummy_input = (torch.randn(1, 3, target_h, target_h),)
+
+            # --- PROCESS FP32 ---
+            print(f"   [PROCESS] FP32 Conversion...")
+            fp32_tflite = temp_dl_dir / f"{name}_fp32.tflite"
+            ai_edge_torch.convert(model, dummy_input).export(str(fp32_tflite))
+            
+            # --- PROCESS INT8 ---
+            print(f"   [PROCESS] INT8 Conversion...")
+            int8_tflite = temp_dl_dir / f"{name}_int8.tflite"
+            int8_success = False  # Track if INT8 works
+            
+            try:
+                def rep():
+                    for j in range(50): 
+                        yield [np.random.randn(1, 3, target_h, target_h).astype(np.float32)]
+                        #yield [np.random.uniform(-0.01, 0.01, (1, 3, target_h, target_h)).astype(np.float32)]
+                
+                ai_edge_torch.convert(
+                    model, 
+                    dummy_input, 
+                    _ai_edge_converter_flags={
+                        'optimizations': [tf.lite.Optimize.DEFAULT], 
+                        'representative_dataset': rep, 
+                        'target_spec': {'supported_ops': [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]}, 
+                        'inference_input_type': tf.int8, 
+                        'inference_output_type': tf.int8
+                    }
+                ).export(str(int8_tflite))
+                int8_success = True
+
+            except Exception as e_int8:
+                print(f"   [WARN] INT8 Conversion failed: {e_int8}. Proceeding with FP32 benchmark only.")
+
+            # --- BENCHMARK WHAT SUCCEEDED ---
+            models_to_bench = [("fp32", fp32_tflite, fp32_dir)]
+            if int8_success:
+                models_to_bench.append(("int8", int8_tflite, int8_dir))
+
+            for mode, tflite_path, save_dir in models_to_bench:
                 dev_p = f"/data/local/tmp/{name}_{mode}.tflite"
                 subprocess.run(["adb", "push", str(tflite_path), dev_p], capture_output=True)
                 
@@ -190,7 +331,7 @@ def main():
 
                 opts = {}
                 if c["status"] == "ok": opts["CPU"] = c["avg"]
-                if g["status"] == "ok": opts[gpu_full_name] = g["avg"]
+                if g["status"] == "ok": opts["GPU"] = g["avg"]
                 if n["status"] == "ok": opts["NPU"] = n["avg"]
                 winner = min(opts, key=opts.get) if opts else "Failed"
 
