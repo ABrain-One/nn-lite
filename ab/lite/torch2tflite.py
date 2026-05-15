@@ -108,7 +108,9 @@ def setup_benchmark_binary(force=False):
     print(f"[SETUP] Verified: {ver}")
 
 # --- METADATA HELPERS ---
-def adb_getprop(key): return adb_shell(f"getprop {key}").splitlines()[-1]
+def adb_getprop(key):
+    lines = adb_shell(f"getprop {key}").splitlines()
+    return lines[-1] if lines else ""
 
 def get_gpu_name():
     raw = adb_shell("dumpsys SurfaceFlinger | grep GLES")
