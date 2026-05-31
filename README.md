@@ -105,6 +105,22 @@ If you find this project to be useful for your research, please consider citing 
 	journal = {Preprints}
 }
 
+@InProceedings{ABrain.MobileDenoising,
+	title = {Real Image Denoising with Knowledge Distillation for High-Performance Mobile {NPUs}},
+	author = {Faraz Kayani and Sarmad Kayani and Asad Ahmed and Radu Timofte and Dmitry Ignatov},
+	booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW)},	
+	pages = {3792--3800},		
+	year={2026}
+}
+
+@InProceedings{ABrain.MobileAgeNet,
+	title = {{MobileAgeNet}: Lightweight Facial Age Estimation for Mobile Deployment},
+	author = {Arun Kumar and Aswathy Baiju and Radu Timofte and Dmitry Ignatov},
+	booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW)},	
+	pages = {3810--3818},		
+	year={2026}
+}
+
 ```
 
 #### The idea and leadership of Dr. Ignatov
