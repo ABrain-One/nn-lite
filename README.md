@@ -92,7 +92,7 @@ Go to the end of the file and add these 3 lines of code according to your availa
 
 ## Citation
 
-If you find this project to be useful for your research, please consider citing our article:
+If you find this project to be useful for your research, please consider citing our articles:
 ```bibtex
 @article{ABrain.NN-Lite,
     title = {AI on the Edge: An Automated Pipeline for PyTorch-to-Android Deployment and Benchmarking},
