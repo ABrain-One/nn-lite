@@ -33,7 +33,7 @@ state_file = work_dir / "processing_state_dual.json"
 for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]: 
     p.mkdir(parents=True, exist_ok=True)
 
-import torch, torchvision, torchvision.transforms as T, ai_edge_torch, tensorflow as tf, numpy as np
+import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
 
 # --- GUARDIAN: USB RECONNECTION LOGIC ---
@@ -276,7 +276,7 @@ def main():
             # --- PROCESS FP32 ---
             print(f"   [PROCESS] FP32 Conversion...")
             fp32_tflite = temp_dl_dir / f"{name}_fp32.tflite"
-            ai_edge_torch.convert(model, dummy_input).export(str(fp32_tflite))
+            litert_torch.convert(model, dummy_input).export(str(fp32_tflite))
             
             # --- PROCESS INT8 ---
             print(f"   [PROCESS] INT8 Conversion...")
@@ -288,9 +288,9 @@ def main():
                     for j in range(50): 
                         yield [np.random.randn(1, 3, target_h, target_h).astype(np.float32)]
                 
-                ai_edge_torch.convert(
-                    model, 
-                    dummy_input, 
+                litert_torch.convert(
+                    model,
+                    dummy_input,
                     _ai_edge_converter_flags={
                         'optimizations': [tf.lite.Optimize.DEFAULT], 
                         'representative_dataset': rep, 
