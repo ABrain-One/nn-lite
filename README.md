@@ -96,7 +96,7 @@ If you find this project to be useful for your research, please consider citing 
 ```bibtex
 @article{ABrain.NN-Lite,
     title = {AI on the Edge: An Automated Pipeline for PyTorch-to-Android Deployment and Benchmarking},
-	author = {Saif U Din and Muhammad Ahsan Hussain and Mohsin Ikram and Dmitry Ignatov and Radu Timofte},
+	author = {Saif U Din and Muhammad Ahsan Hussain and Mohsin Ikram and Faraz Kiyani and Dmitry Ignatov and Radu Timofte},
 	doi = {10.20944/preprints202511.1831.v1},
 	url = {https://doi.org/10.20944/preprints202511.1831.v1},
 	year = 2025,
