@@ -2,6 +2,8 @@
 
 <img src='https://abrain.one/img/nnlite-logo.png' width='25%'/>
 
+The original open-source version of the <a href='https://github.com/ABrain-One/NN-Lite/'>NN Lite</a> was developed by <strong>Faraz Kayani</strong>, <strong>Saif U Din</strong> and <strong>Muhammad Ahsan Hussain</strong> at the Computer Vision Laboratory, University of Würzburg, Germany, under the supervision and technical guidance of <strong>Dr. Dmitry Ignatov</strong>, whose foundational work established the basis for the project.
+
 ## Create and Activate a Virtual Environment (recommended)
 For Linux/Mac:
 ```bash
