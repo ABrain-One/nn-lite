@@ -7,6 +7,10 @@ the HF source repo, except those already in processing_state_dual.json's
 'processed' or 'failed' lists.
 
 Use this version for normal full-coverage runs on a new device.
+
+The nn-dataset checkout is located with --dataset-root, the NN_DATASET_ROOT
+environment variable, or (by default) a sibling "nn-dataset" folder next to
+the nn-lite checkout.
 """
 import sys, os, argparse, json, re, subprocess, importlib.util, shutil, time, gc
 from pathlib import Path
@@ -20,18 +24,35 @@ COOL_DOWN_SESSION = 60
 # --- PATH SETUP ---
 script_path = Path(__file__).resolve()
 project_root = script_path.parents[3]
-dataset_root = project_root / "nn-dataset"
 
-stat_base = dataset_root / "ab" / "nn" / "stat" / "run" /  "tflite"
-int8_dir = stat_base / "int8"
-fp32_dir = stat_base / "fp32"
+def default_dataset_root():
+    env = os.environ.get("NN_DATASET_ROOT")
+    if env:
+        return Path(env).expanduser().resolve()
+    sibling = project_root / "nn-dataset"
+    if sibling.exists():
+        return sibling
+    return Path.cwd() / "nn-dataset"
 
-work_dir = dataset_root / "_work"
-data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
-state_file = work_dir / "processing_state_dual.json"
+def set_dataset_root(root):
+    """Point all input and output paths at the given nn-dataset checkout."""
+    global dataset_root, stat_base, int8_dir, fp32_dir, work_dir, data_root, temp_dl_dir, state_file
+    dataset_root = Path(root).expanduser().resolve()
+    stat_base = dataset_root / "ab" / "nn" / "stat" / "run" /  "tflite"
+    int8_dir = stat_base / "int8"
+    fp32_dir = stat_base / "fp32"
+    work_dir = dataset_root / "_work"
+    data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
+    state_file = work_dir / "processing_state_dual.json"
+    for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]:
+        p.mkdir(parents=True, exist_ok=True)
 
-for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]: 
-    p.mkdir(parents=True, exist_ok=True)
+try:
+    from ab.lite.results import (extract_error_from_output, benchmark_failed, failed_result,
+                                 parse_benchmark_output, build_record)
+except ImportError:  # executed as a plain script, e.g. after a session restart
+    from results import (extract_error_from_output, benchmark_failed, failed_result,
+                         parse_benchmark_output, build_record)
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -143,42 +164,14 @@ def get_device_analytics():
     soc = adb_getprop("ro.soc.model") or adb_getprop("ro.board.platform")
     return {"timestamp": time.time(), "cpu_info": {"cpu_cores": len([p for p in processors if 'processor' in p]), "processors": processors[:4], "arm_architecture": {"hardware": global_meta["hardware"] or soc, "features": global_meta["features"], "cpu_implementer": global_meta["cpu implementer"], "cpu_architecture": global_meta["cpu architecture"], "cpu_variant": global_meta["cpu variant"], "cpu_part": global_meta["cpu part"], "cpu_revision": global_meta["cpu revision"]}}}
 
-# --- ERROR EXTRACTION ---
-ERROR_KEYWORDS = (
-    "ERROR", "Error", "Failed", "Could not", "Aborted",
-    "Cannot", "unsupported", "Unsupported", "INVALID",
-    "Segmentation", "Op builtin_code", "Node number",
-    "NNAPI", "GPU delegate", "Internal:", "INTERNAL:"
-)
-
-def extract_error_from_output(out: str) -> str:
-    """Pull the real error message out of benchmark_model's stdout/stderr."""
-    if not out or not out.strip():
-        return "no output from benchmark_model"
-
-    error_lines = []
-    for line in out.splitlines():
-        line = line.strip()
-        if line and any(kw in line for kw in ERROR_KEYWORDS):
-            error_lines.append(line)
-
-    if error_lines:
-        msg = " | ".join(error_lines[:3])
-    else:
-        nonempty = [ln.strip() for ln in out.splitlines() if ln.strip()]
-        msg = nonempty[-1] if nonempty else "no output"
-
-    if len(msg) > 500:
-        msg = msg[:497] + "..."
-    return msg
-
+# --- BENCHMARK ---
 def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None):
     """Run benchmark_model for one (backend, mode) combo and parse results."""
     flag = {"cpu": "--use_xnnpack=false", "gpu": "--use_gpu=true", "npu": "--use_nnapi=true"}.get(backend, "")    
     cmd = f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} {flag}"
     out = adb_shell(cmd)
 
-    if "ERROR:" in out or "Failed to compute" in out or "avg=" not in out.replace(" ", ""):
+    if benchmark_failed(out):
         error_msg = extract_error_from_output(out)
         if log_path is not None:
             try:
@@ -196,23 +189,24 @@ def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=No
             except Exception as log_err:
                 print(f"   [LOG WARN] could not write to {log_path}: {log_err}")
 
-        return {"avg": 0, "min": 0, "max": 0, "std": 0, "status": "failed", "error": error_msg}
+        return failed_result(error_msg)
 
-    res = {"avg": 0.0, "min": 0.0, "max": 0.0, "std": 0.0, "status": "ok"}
-    for key in ["avg", "min", "max", "std"]:
-        match = re.search(rf"{key}=([\d\.]+)", out.replace(" ", ""))
-        if match: res[key] = float(match.group(1)) * 1000.0
-    return res
+    return parse_benchmark_output(out)
 
 # --- CORE LOGIC ---
 def main():
-    arch_dir, transforms_dir = dataset_root / "ab" / "nn" / "nn", dataset_root / "ab" / "nn" / "transform"
     ap = argparse.ArgumentParser()
     ap.add_argument("--android-runs", type=int, default=20)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--reinstall-bench", action="store_true",
                     help="Force re-push of benchmark_model binary to device")
+    ap.add_argument("--dataset-root", default=None,
+                    help="Path to the nn-dataset checkout (default: $NN_DATASET_ROOT or ../nn-dataset)")
+    ap.add_argument("--models", nargs="+", default=None,
+                    help="Only process these model names (default: all models)")
     args = ap.parse_args()
+    set_dataset_root(args.dataset_root or default_dataset_root())
+    arch_dir, transforms_dir = dataset_root / "ab" / "nn" / "nn", dataset_root / "ab" / "nn" / "transform"
 
     if args.force and state_file.exists(): state_file.unlink()
     state = json.load(open(state_file)) if state_file.exists() else {"processed": [], "failed": []}
@@ -233,6 +227,8 @@ def main():
     
     hf_files = list_repo_files(SOURCE_REPO)
     py_files = sorted([p for p in arch_dir.rglob("*.py") if f"{p.stem}.pth" in hf_files])
+    if args.models:
+        py_files = [p for p in py_files if p.stem in set(args.models)]
     to_process = [p for p in py_files
                   if p.stem not in set(state["processed"])
                   and p.stem not in set(state["failed"])]
@@ -247,7 +243,9 @@ def main():
         if session_counter >= RESTART_EVERY_N_MODELS:
             print(f"\n[THERMAL] Resetting Session...")
             time.sleep(COOL_DOWN_SESSION)
-            os.execv(sys.executable, [sys.executable, sys.argv[0]] + (["--android-runs", str(args.android_runs)] if "--android-runs" in sys.argv else []))
+            restart_args = ["--android-runs", str(args.android_runs), "--dataset-root", str(dataset_root)]
+            if args.models: restart_args += ["--models", *args.models]
+            os.execv(sys.executable, [sys.executable, sys.argv[0]] + restart_args)
 
         print(f"\n[{idx}/{len(to_process)}] Model: {name}")
         try:
@@ -317,49 +315,12 @@ def main():
                 n = run_bench(dev_p, "npu", args.android_runs, log_path=error_log, model_name=name, mode=mode)
                 adb_shell(f"rm {dev_p}")
 
-                opts = {}
-                if c["status"] == "ok": opts["CPU"] = c["avg"]
-                if g["status"] == "ok": opts["GPU"] = g["avg"]
-                if n["status"] == "ok": opts["NPU"] = n["avg"]
-
-                # Original JSON field order preserved.
-                if not opts:
+                memory = get_android_memory()
+                final_data = build_record(name, device_model, os_ver, args.android_runs,
+                                          {"cpu": c, "gpu": g, "npu": n}, memory, target_h,
+                                          get_device_analytics())
+                if not final_data["valid"]:
                     print(f"   [INVALID] {mode.upper()}: all backends failed, marking valid=false")
-                    final_data = {
-                        "model_name": name,
-                        "device_type": device_model,
-                        "os_version": os_ver,
-                        "valid": False,
-                        "emulator": False,
-                        "iterations": args.android_runs,
-                        **get_android_memory(),
-                        "in_dim_0": 1, "in_dim_1": target_h, "in_dim_2": target_h, "in_dim_3": 3,
-                        "device_analytics": get_device_analytics()
-                    }
-                    if c["status"] == "failed": final_data["cpu_error"] = c["error"]
-                    if g["status"] == "failed": final_data["gpu_error"] = g["error"]
-                    if n["status"] == "failed": final_data["npu_error"] = n["error"]
-                else:
-                    winner = min(opts, key=opts.get)
-                    final_data = {
-                        "model_name": name,
-                        "device_type": device_model,
-                        "os_version": os_ver,
-                        "valid": True,
-                        "emulator": False,
-                        "iterations": args.android_runs,
-                        "duration": int(opts[winner]),
-                        "unit": winner,
-                        "cpu_duration": int(c["avg"]), "cpu_min_duration": int(c["min"]), "cpu_max_duration": int(c["max"]), "cpu_std_dev": c["std"],
-                        "gpu_duration": int(g["avg"]), "gpu_min_duration": int(g["min"]), "gpu_max_duration": int(g["max"]), "gpu_std_dev": g["std"],
-                        "npu_duration": int(n["avg"]), "npu_min_duration": int(n["min"]), "npu_max_duration": int(n["max"]), "npu_std_dev": n["std"],
-                        **get_android_memory(),
-                        "in_dim_0": 1, "in_dim_1": target_h, "in_dim_2": target_h, "in_dim_3": 3,
-                        "device_analytics": get_device_analytics()
-                    }
-                    if c["status"] == "failed": final_data["cpu_error"] = c["error"]
-                    if g["status"] == "failed": final_data["gpu_error"] = g["error"]
-                    if n["status"] == "failed": final_data["npu_error"] = n["error"]
 
                 model_folder = save_dir / f"img-classification_cifar-10_acc_{name}"
                 model_folder.mkdir(parents=True, exist_ok=True)
