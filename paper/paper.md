@@ -126,7 +126,8 @@ resolution from the model's own preprocessing definition, so new architectures
 enter the pipeline without any per-model configuration.
 
 **Two precisions with graceful degradation.** Every model is exported in FP32
-and, through full-integer post-training quantization, in INT8. If quantization
+and, through full-integer post-training quantization calibrated on real
+training images prepared with the model's own input transform, in INT8. If quantization
 fails, the FP32 model is still measured and recorded, so one unsupported
 operator never removes a model from the dataset.
 

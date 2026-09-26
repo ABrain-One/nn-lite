@@ -50,9 +50,11 @@ def set_dataset_root(root):
 try:
     from ab.lite.results import (extract_error_from_output, benchmark_failed, failed_result,
                                  parse_benchmark_output, build_record)
+    from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
+    from preprocess import CIFAR10_NORM, load_transform, calibration_images
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -225,6 +227,9 @@ def main():
     error_log = work_dir / f"benchmark_errors_{device_clean}.log"
     print(f"[LOG] Benchmark errors will be appended to: {error_log}")
     
+    # INT8 calibration uses real CIFAR-10 training images, preprocessed with each model's own transform.
+    calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
+
     hf_files = list_repo_files(SOURCE_REPO)
     py_files = sorted([p for p in arch_dir.rglob("*.py") if f"{p.stem}.pth" in hf_files])
     if args.models:
@@ -260,6 +265,8 @@ def main():
                     print(f"   [DEBUG] Transform: {tf_name} -> Res: {target_h}x{target_h}")
             else:
                 print(f"   [DEBUG] Transform file {tf_name}.py not found. Defaulting to 32x32.")
+            model_tf = (load_transform(transforms_dir, tf_name) if tf_file.exists()
+                        else T.Compose([T.ToTensor(), T.Normalize(*CIFAR10_NORM)]))
 
             pth = Path(hf_hub_download(SOURCE_REPO, f"{name}.pth", cache_dir=str(temp_dl_dir)))
             spec = importlib.util.spec_from_file_location("mod", py_path)
@@ -282,9 +289,10 @@ def main():
             int8_success = False
             
             try:
+                calib = calibration_images(calib_set, model_tf, target_h)
                 def rep():
-                    for j in range(50): 
-                        yield [np.random.randn(1, 3, target_h, target_h).astype(np.float32)]
+                    for j in range(len(calib)):
+                        yield [calib[j:j + 1]]
                 
                 litert_torch.convert(
                     model,

@@ -29,6 +29,10 @@ All notable changes to NN-Lite are documented in this file.
   longer available on PyPI, so fresh installs had failed.
 
 ### Fixed
+- INT8 calibration uses 50 real CIFAR-10 training images, preprocessed with each model's own
+  transform (`ab/lite/preprocess.py`), instead of random noise. Random-noise calibration, used
+  since May 2026, lowered the INT8 accuracy of some models considerably (e.g. AirNet on
+  CIFAR-10: 79.1% instead of 86.6%).
 - Crash on devices with missing system properties (e.g. HiSilicon Kirin).
 - The emulator path no longer imports the removed `ai_edge_torch` package.
 

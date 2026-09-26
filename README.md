@@ -8,7 +8,8 @@ NN-Lite measures how fast PyTorch models run on real Android phones. For every m
 [LEMUR / NN Dataset](https://github.com/ABrain-One/nn-dataset) it:
 
 1. rebuilds the network and loads its trained weights,
-2. converts it to LiteRT (TensorFlow Lite) in **FP32** and full-integer **INT8**,
+2. converts it to LiteRT (TensorFlow Lite) in **FP32** and full-integer **INT8** (calibrated on real
+   CIFAR-10 training images, prepared with the model's own input transform),
 3. copies it to a phone over USB and times it with the official `benchmark_model` tool on the **CPU**, **GPU** and **NPU (NNAPI)**,
 4. saves one JSON record per model, precision and device back into the dataset.
 
@@ -21,7 +22,8 @@ skipping them. An optional emulator path (Android Studio) is also included.
 - Linux (tested on Ubuntu) with Python 3.10 or newer
 - `adb` (Android platform tools): `sudo apt install adb`, or the [SDK platform tools](https://developer.android.com/tools/releases/platform-tools)
 - An Android phone with USB debugging enabled (see [Connect a phone](#connect-a-phone)); no root is needed
-- An internet connection (model weights are downloaded from Hugging Face)
+- An internet connection (model weights are downloaded from Hugging Face; the CIFAR-10 training
+  set used for INT8 calibration is downloaded once into `nn-dataset/_work/data`)
 
 ## Installation
 
