@@ -1,14 +1,14 @@
 ---
-title: 'NN-Lite: Automated PyTorch-to-Android conversion and large-scale benchmarking on physical mobile devices'
+title: 'NN-Lite: Unattended benchmarking of PyTorch models on physical Android devices'
 tags:
   - Python
   - Android
   - deep learning
   - edge AI
-  - model deployment
+  - on-device inference
   - quantization
   - benchmarking
-  - TensorFlow Lite
+  - LiteRT
 authors:
   - name: Dmitry Ignatov
     # orcid: 0000-0000-0000-0000   # TODO: add ORCID
@@ -32,143 +32,139 @@ bibliography: paper.bib
 
 Modern phones contain several different processors that can run artificial
 intelligence models: the main processor (CPU), the graphics processor (GPU) and,
-increasingly, dedicated neural processing units (NPUs). How quickly a given
-model runs depends strongly on which phone and which processor is used, and the
-only reliable way to find out is to run the model on the phone itself.
-Researchers, however, usually design and train their models on desktop
+increasingly, a dedicated neural processing unit (NPU). How fast a model runs,
+and whether it runs at all, depends on the phone and on which of these
+processors is used, and the only reliable way to find out is to run the model on
+the phone itself. Researchers, however, design and train their models on desktop
 computers with the PyTorch library [@Paszke2019PyTorch], and moving each model
-onto a phone and timing it by hand does not scale beyond a handful of
-experiments.
+onto a phone and timing it by hand does not scale beyond a few experiments.
 
-NN-Lite is a Python tool that automates this whole journey. It takes neural
-networks from the LEMUR model collection [@Goodarzi2025LEMUR], converts each one
-into the format Android phones understand, copies it to a phone or an Android
-emulator connected to the computer, times it on every available processor, and
-writes the results back into LEMUR in a single, consistent format. A run can
-cover hundreds of models on one device without supervision, and it continues
-where it stopped if the phone is unplugged or the computer restarts.
+NN-Lite automates this. Connected to an ordinary Android phone by a USB cable,
+it takes each neural network from the LEMUR model collection
+[@Goodarzi2025LEMUR], converts it into the format Android understands, in both
+full and reduced numerical precision, copies it to the phone, times it on the
+CPU, GPU and NPU, records what kind of phone produced the numbers, and saves
+everything back into LEMUR in one consistent format. It is built to run
+unattended for days: it continues where it stopped if the cable is unplugged or
+the computer restarts, and it records failures instead of silently skipping
+them.
 
 # Statement of need
 
-Research on efficient deep learning (hardware-aware neural architecture search,
-quantization, latency prediction, model compression) needs latency and
-feasibility measurements for *many* architectures on *many* real devices.
-Measurements from emulators or desktop GPUs are a poor substitute: emulators do
-not expose a phone's GPU and NPU drivers, and on real phones the same model can
-succeed on one accelerator and fail on another because of missing operator
-support [@Ignatov2019AIBenchmark; @Almeida2021SmartAtWhatCost]. Collecting such
-data by hand requires converting every model, handling conversion failures,
-pushing files to the device, invoking the right accelerator, parsing logs, and
-recording which phone, operating system and memory state produced each number.
+Research on efficient deep learning, such as hardware-aware architecture
+search, quantization, latency prediction and model compression, needs
+measurements of *many* architectures on *many* real devices. Emulators and
+desktop hardware are poor substitutes: an Android emulator does not expose a
+phone's GPU and NPU drivers, and on real phones the same model can succeed on one
+accelerator and fail on another because of missing operator support
+[@Ignatov2019AIBenchmark; @Almeida2021SmartAtWhatCost]. Collecting such data by
+hand means converting every model, handling conversion failures, pushing files
+to the phone, invoking each accelerator, parsing its output and noting which
+phone, operating system and memory state produced each number, for hundreds of
+models per device.
 
-NN-Lite targets researchers who train models in PyTorch and need reproducible,
-per-device, per-accelerator measurements at dataset scale. It turns a model
-collection into on-device statistics with one command, records both successes
-and failures, and stores results next to the models' training statistics in
-LEMUR so that accuracy and deployment cost can be queried together. An earlier
-version of the pipeline, which executed models only on Android emulators, is
-described in @Din2025NNLite; the software described here adds a benchmarking
-path for physical devices, dual-precision (FP32 and INT8) conversion, and the
-fault tolerance needed for long unattended runs on consumer phones.
+The first version of NN-Lite [@Din2025NNLite] automated conversion and
+execution on Android *emulators*, which verifies that a converted model loads
+and runs but cannot measure real accelerators. The software described here is
+the physical-device engine that replaces that step with measurements on real
+phones. It targets researchers who train models in PyTorch and need
+reproducible, per-device and per-accelerator latency and feasibility data at
+dataset scale, stored next to the models' accuracy and training records so that
+the two can be analysed together.
 
 # State of the field
 
 Existing tools cover parts of this workflow. *AI Benchmark*
 [@Ignatov2018AIBenchmark; @Ignatov2019AIBenchmark] and *MLPerf Mobile*
-[@Reddi2022MLPerfMobile] are established mobile benchmark suites, but they
-evaluate a fixed, curated set of reference models to rank *devices*; they are
-not designed to ingest thousands of arbitrary research architectures.
-Latency predictors such as *nn-Meter* [@Zhang2021nnMeter] and hardware-aware
-NAS benchmarks such as *HW-NAS-Bench* [@Li2021HWNASBench] consume measured
-latencies as ground truth rather than producing them for new model families.
-Compiler stacks such as *TVM* [@Chen2018TVM] optimise and tune individual
-models, and vendor services such as *Qualcomm AI Hub* [@QualcommAIHub] profile
-models on hosted hardware from a single chip vendor under a proprietary
-service. Finally, the `benchmark_model` utility shipped with LiteRT
-[@TFLiteBenchmarkTool] times one already-converted model per invocation, with
-no conversion, bookkeeping or result schema.
+[@Reddi2022MLPerfMobile] are established mobile benchmarks, but they run a fixed,
+curated set of reference models in order to compare *devices*; they are not
+designed to ingest hundreds of arbitrary research architectures. Latency
+predictors such as *nn-Meter* [@Zhang2021nnMeter] and hardware-aware NAS
+benchmarks such as *HW-NAS-Bench* [@Li2021HWNASBench] consume measured latencies
+as ground truth rather than producing them for new model families. Compiler
+stacks such as *TVM* [@Chen2018TVM] optimise and tune individual models, and
+*Qualcomm AI Hub* [@QualcommAIHub] profiles models on hosted hardware from a
+single chip vendor through a proprietary service. The `benchmark_model` utility
+of LiteRT [@TFLiteBenchmarkTool] times one already-converted model per call,
+with no conversion, bookkeeping or result format.
 
-We therefore chose to *build on* rather than replace these components. NN-Lite
+We therefore built on these components rather than replacing them. NN-Lite
 does not re-implement conversion, kernels or timing: it uses LiteRT Torch
 [@LiteRTTorch] for conversion, TensorFlow Lite runtimes [@Abadi2016TensorFlow]
 and the official `benchmark_model` binary for execution, the Android Neural
 Networks API [@AndroidNNAPI] for NPU access and the Android Debug Bridge
-[@AndroidADB] for device control. Its contribution is the missing layer that
-none of these tools provide: dataset-scale orchestration from a model
-collection to a device fleet, failure-tolerant execution, and a stable result
-schema joined to the models' training records. Contributing this layer
-upstream was not an option, because it is specific neither to one converter nor
-to one benchmark tool; it is the glue between a model *dataset* and many of
-them.
+[@AndroidADB] for device control. Its contribution is the layer none of these
+provide: orchestration from a model collection to a physical phone, fault
+tolerance for multi-day runs on consumer hardware, and a stable result schema
+joined to the models' training records. This layer could not be contributed
+upstream, because it belongs to neither the converter nor the benchmark tool; it
+connects a model dataset to real devices.
 
 # Software design
 
-\autoref{fig:architecture} shows the architecture. A host-side Python command
-line drives four stages (load, convert, orchestrate, record) and talks to the
-target only through `adb`, which reaches USB-connected phones and emulators in
-the same way.
+\autoref{fig:architecture} shows the engine. For every model, a Python process
+on the workstation rebuilds and converts the network, then drives the phone
+over `adb`; the phone only needs USB debugging enabled.
 
-![Architecture of NN-Lite. Models, weights and hyperparameters are read from LEMUR, converted on the host, executed on physical devices through the native `benchmark_model` binary or on emulators through the NN-Lite Android app, and the resulting measurements are written back into LEMUR.\label{fig:architecture}](figures/architecture.png){ width=100% }
+![How NN-Lite benchmarks one model on a physical phone: (1) the model is read from LEMUR; (2) it is rebuilt and converted to FP32 and INT8 LiteRT files on the workstation; (3) it is copied over USB and timed by `benchmark_model` on the CPU, the GPU and the NPU (through NNAPI), while the device is probed; (4) one JSON record is saved back into LEMUR. The loop repeats for the next model, and the safeguards at the bottom keep multi-day runs going without supervision.\label{fig:architecture}](figures/architecture.png){ width=100% }
 
 The main design decisions and their trade-offs are:
 
-**Host-driven execution instead of an on-device app.** For physical devices,
-NN-Lite pushes Google's prebuilt `benchmark_model` binary to the phone and runs
-it for each accelerator. This requires neither root access nor rebuilding and
-signing an app per model, works on any Android phone with USB debugging, and
-yields timings comparable with those of other LiteRT users. The cost is that
-application-level overhead (image decoding, Java/JNI calls) is not measured. The
-emulator path keeps a small Kotlin app built on the TensorFlow Lite
-Interpreter, because emulators are primarily used to validate that a converted
-model loads and runs end to end.
+**Host-driven execution with the vendor-neutral benchmark tool.** NN-Lite pushes
+Google's prebuilt `benchmark_model` binary to the phone once and invokes it per
+model and accelerator. This needs neither root access nor building and signing
+an app per model, works on any Android phone, and produces timings comparable
+with those of other LiteRT users. The cost is that application-level overhead
+such as image decoding is not included, which is appropriate when the goal is to
+compare architectures rather than applications.
 
 **Models are rebuilt from source, not from exported graphs.** Each LEMUR model
-is stored as PyTorch code plus hyperparameters and a checkpoint. NN-Lite
-re-instantiates the network, restores the weights and derives the input
-resolution from the model's own preprocessing definition. This keeps the
-converted model faithful to the trained one and lets new architectures enter
-the pipeline without any per-model configuration.
+is stored as PyTorch code, hyperparameters and a checkpoint. NN-Lite
+re-instantiates the network, restores its weights and reads the input
+resolution from the model's own preprocessing definition, so new architectures
+enter the pipeline without any per-model configuration.
 
 **Two precisions with graceful degradation.** Every model is exported in FP32
-and, via full-integer post-training quantization, in INT8. If quantization
-fails, the FP32 result is still benchmarked and recorded, so a single
-unsupported operator never removes a model from the dataset.
+and, through full-integer post-training quantization, in INT8. If quantization
+fails, the FP32 model is still measured and recorded, so one unsupported
+operator never removes a model from the dataset.
 
 **Failures are data.** Each accelerator is benchmarked independently. When one
-fails, the relevant lines of the runtime's output are extracted and stored in
-the record (e.g., `npu_error`) and written to a per-device log; a model for
-which all accelerators fail is recorded with `valid: false` instead of being
-dropped. This avoids survivorship bias in downstream analyses and documents
-operator-support gaps, which are themselves a research signal.
+fails, the relevant lines of the tool's output are extracted into the record
+(for example `npu_error`) and into a per-device log; a model for which every
+accelerator fails is stored with `valid: false` rather than dropped. This avoids
+survivorship bias in later analyses and documents operator-support gaps, which
+are themselves informative.
 
-**Crash-only, resumable runs.** Consumer phones throttle, lose USB connections
-and accumulate memory pressure during multi-day runs. NN-Lite keeps a persistent
-queue of processed and failed models, pauses between models and between
-sessions to let the device cool, re-executes itself periodically to release host
+**Crash-only, resumable runs.** Consumer phones heat up, lose USB connections
+and accumulate memory pressure during long runs. NN-Lite keeps a persistent list
+of finished and failed models, pauses between models and between sessions so
+the device can cool down, restarts its own process every 50 models to release
 memory held by the conversion toolchain, and blocks until a disconnected device
-reappears. Any run can be interrupted and restarted without repeating work.
+reappears. A run can be stopped and restarted at any time without repeating
+work.
 
-**One schema shared with LEMUR.** Results are stored as one JSON file per model,
-precision and device, in the same directory convention LEMUR uses for training
-statistics. Each record contains per-accelerator mean, minimum, maximum and
-standard deviation of latency, the fastest accelerator, input dimensions, memory
-state, and device telemetry (SoC, CPU topology, OS build), together with an
-`emulator` flag. Emulator and physical-device results can therefore be compared
-or filtered without changing downstream code.
+**One schema shared with LEMUR.** Results are written as one JSON file per
+model, precision and device, following the directory layout LEMUR uses for its
+training statistics. Each record holds, per accelerator, the mean, minimum,
+maximum and standard deviation of latency over repeated runs, the fastest
+accelerator, the input dimensions, the memory state and device telemetry (chip,
+CPU topology and OS build), plus an `emulator` flag. Because the emulator-based
+version [@Din2025NNLite] writes the same schema, earlier and new results can be
+compared or filtered without changing downstream code.
 
 # Research impact statement
 
 NN-Lite is the on-device measurement component of the LEMUR ecosystem
-[@Goodarzi2025LEMUR]; the pipeline and its emulator-based evaluation were
-introduced in @Din2025NNLite. Using the physical-device path described here, we
-have benchmarked about 540 LEMUR image-classification architectures, each in
-FP32 and INT8 and on CPU, GPU and NNAPI, on five physical devices covering
-Qualcomm Snapdragon (720G, 888), MediaTek Helio G85 and HiSilicon Kirin 710
-chipsets, producing more than 5,400 per-device records. These records are
-publicly available in the LEMUR repository and can be retrieved with its API
-next to accuracy and training metadata. The same deployment tooling supports the
-lab's work on mobile-oriented models, including real-image denoising for mobile
-NPUs [@Kayani2026Denoising] and lightweight facial age estimation
+[@Goodarzi2025LEMUR]. With the engine described here we have benchmarked about
+540 LEMUR image-classification architectures, each in FP32 and INT8 and on CPU,
+GPU and NNAPI, on five physical devices covering Qualcomm Snapdragon (720G,
+888), MediaTek Helio G85 and HiSilicon Kirin 710 chipsets, producing more than
+5,400 per-device records. These records are publicly available in the LEMUR
+repository and can be retrieved through its API together with accuracy and
+training metadata. The same deployment tooling supports the lab's work on
+mobile-oriented models, including real-image denoising for mobile NPUs
+[@Kayani2026Denoising] and lightweight facial age estimation
 [@Kumar2026MobileAgeNet].
 
 # AI usage disclosure
@@ -176,19 +172,17 @@ NPUs [@Kayani2026Denoising] and lightweight facial age estimation
 Generative AI was used in preparing this paper. Claude (Anthropic), accessed
 through the Claude Code agent (model version: TODO — to be filled in by the
 authors), was used to draft the text of this manuscript, to assemble
-`paper.bib`, and to draw the architecture diagram in
-\autoref{fig:architecture}, all based on the repository source code and on
-information supplied by the authors. TODO — authors to state here whether AI
-tools (and which tools and versions) were used when writing the NN-Lite source
-code or documentation; if none were, state this explicitly. The authors
-reviewed, edited and validated all AI-assisted content, verified every
+`paper.bib`, and to draw \autoref{fig:architecture}, based on the repository
+source code and on information supplied by the authors. TODO — authors to state
+whether AI tools (and which tools and versions) were used when writing the
+NN-Lite source code or documentation; if none were, state this explicitly. The
+authors reviewed, edited and validated all AI-assisted content, verified every
 reference, and made all design and architectural decisions for the software.
 
 # Acknowledgements
 
-We thank Saif U Din, Muhammad Ahsan Hussain and Mohsin Ikram for their work on
-the emulator-based pipeline and the NN-Lite Android application, and all
-contributors to the LEMUR dataset. TODO — add funding sources, or state that
-this work received no specific funding.
+We thank the contributors to the LEMUR dataset and to the earlier
+emulator-based version of NN-Lite [@Din2025NNLite]. TODO — add funding sources,
+or state that this work received no specific funding.
 
 # References

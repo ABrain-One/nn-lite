@@ -1,149 +1,229 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 548" width="900" height="548" font-family="Liberation Sans, Helvetica, Arial, sans-serif">
-  <title>NN-Lite architecture</title>
-  <desc>Models flow from the LEMUR dataset through the NN-Lite host (load, convert, orchestrate, record), over adb to physical Android devices or emulators, and the measurements flow back into LEMUR.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 644" width="960" height="644" font-family="Liberation Sans, Helvetica, Arial, sans-serif">
+  <title>How NN-Lite benchmarks a model on a real Android phone</title>
+  <desc>Each model is taken from LEMUR, rebuilt and converted to FP32 and INT8 on the workstation, copied over USB to a physical phone where the benchmark_model tool times it on the CPU, GPU and NPU, and the timings and device information are saved as one JSON file per model back into LEMUR. The loop repeats for the next model, and safeguards keep the run going for days.</desc>
   <defs>
-    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#1F2933"/>
     </marker>
-    <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#B7791F"/>
+    <marker id="ahg" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748B"/>
     </marker>
     <style>
-      .ttl  { font-size: 19px; font-weight: 700; }
+      .ttl  { font-size: 18px; font-weight: 700; fill: #1F2933; }
       .sub  { font-size: 14px; fill: #52606D; }
-      .h    { font-size: 16px; font-weight: 700; fill: #1F2933; }
-      .t    { font-size: 14px; fill: #323F4B; }
-      .mono { font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: 12.5px; fill: #5C3D0B; }
-      .chip { font-size: 14px; font-weight: 700; fill: #1F2933; }
+      .b15  { font-size: 15px; font-weight: 700; fill: #1F2933; }
+      .t14  { font-size: 14px; fill: #323F4B; }
+      .num  { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+      .code { font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: 12px; fill: #CBD5E1; }
+      .k    { fill: #93C5FD; }
+      .v    { fill: #FCD34D; }
       .flow { stroke: #1F2933; stroke-width: 2; fill: none; }
-      .meas { stroke: #B7791F; stroke-width: 2; fill: none; stroke-dasharray: 6 4; }
     </style>
   </defs>
 
-  <rect x="0" y="0" width="900" height="548" fill="#FFFFFF"/>
+  <rect width="960" height="644" fill="#FFFFFF"/>
 
-  <!-- ============ LEMUR (source and sink) ============ -->
-  <rect x="12" y="20" width="200" height="468" rx="14" fill="#F4F0FB" stroke="#7C5CBF" stroke-width="1.5"/>
-  <text x="112" y="47" text-anchor="middle" class="ttl" fill="#3F2A78">LEMUR dataset</text>
-  <text x="112" y="67" text-anchor="middle" class="sub">model zoo + statistics</text>
+  <!-- ================= loop: repeat for the next model ================= -->
+  <path d="M847,58 C847,14 332,14 332,56" fill="none" stroke="#64748B" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#ahg)"/>
+  <rect x="498" y="12" width="184" height="26" rx="13" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="590" y="30" text-anchor="middle" font-size="14" font-style="italic" fill="#475569">repeat for the next model</text>
 
-  <rect x="26" y="92" width="172" height="62" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
-  <text x="112" y="118" text-anchor="middle" class="h">Architectures</text>
-  <text x="112" y="139" text-anchor="middle" class="t">PyTorch source code</text>
+  <!-- ================= 1. Models (LEMUR) ================= -->
+  <rect x="12" y="60" width="176" height="418" rx="14" fill="#F4F0FB" stroke="#7C5CBF" stroke-width="1.5"/>
+  <circle cx="34" cy="84" r="12" fill="#7C5CBF"/>
+  <text x="34" y="89" text-anchor="middle" class="num">1</text>
+  <text x="54" y="90" class="ttl">Models</text>
+  <text x="24" y="112" class="sub">from the LEMUR dataset</text>
 
-  <rect x="26" y="166" width="172" height="62" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
-  <text x="112" y="192" text-anchor="middle" class="h">Hyperparameters</text>
-  <text x="112" y="213" text-anchor="middle" class="t">and input transforms</text>
+  <!-- database icon -->
+  <path d="M66,136 V166 A34,9 0 0 0 134,166 V136" fill="#DDD3F3" stroke="#7C5CBF" stroke-width="1.5"/>
+  <path d="M66,151 A34,9 0 0 0 134,151" fill="none" stroke="#7C5CBF" stroke-width="1.5"/>
+  <ellipse cx="100" cy="136" rx="34" ry="9" fill="#EDE7FA" stroke="#7C5CBF" stroke-width="1.5"/>
 
-  <rect x="26" y="240" width="172" height="62" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
-  <text x="112" y="266" text-anchor="middle" class="h">Trained weights</text>
-  <text x="112" y="287" text-anchor="middle" class="t">Hugging Face Hub</text>
+  <rect x="24" y="192" width="152" height="44" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
+  <text x="100" y="219" text-anchor="middle" class="b15">PyTorch code</text>
+  <rect x="24" y="244" width="152" height="44" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
+  <text x="100" y="271" text-anchor="middle" class="b15">Hyperparameters</text>
+  <rect x="24" y="296" width="152" height="44" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
+  <text x="100" y="323" text-anchor="middle" class="b15">Trained weights</text>
 
-  <line x1="30" y1="336" x2="194" y2="336" stroke="#B9A5E0" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="100" y="384" text-anchor="middle" font-size="14" font-weight="700" fill="#3F2A78">No per-model setup:</text>
+  <text x="100" y="404" text-anchor="middle" class="t14">input size is read</text>
+  <text x="100" y="422" text-anchor="middle" class="t14">from the model itself</text>
 
-  <rect x="26" y="364" width="172" height="110" rx="9" fill="#FFF6E0" stroke="#D69E2E" stroke-width="1.5"/>
-  <text x="112" y="392" text-anchor="middle" class="h">On-device stats</text>
-  <text x="112" y="417" text-anchor="middle" class="mono">stat/run/tflite/</text>
-  <text x="112" y="437" text-anchor="middle" class="mono">{fp32,int8}/&lt;model&gt;/</text>
-  <text x="112" y="457" text-anchor="middle" class="mono">android_&lt;dev&gt;.json</text>
+  <!-- ================= 2. Convert (workstation) ================= -->
+  <rect x="212" y="60" width="240" height="418" rx="14" fill="#EAF2FB" stroke="#2F6DB5" stroke-width="1.5"/>
+  <circle cx="234" cy="84" r="12" fill="#2F6DB5"/>
+  <text x="234" y="89" text-anchor="middle" class="num">2</text>
+  <text x="254" y="90" class="ttl">Convert</text>
+  <text x="224" y="112" class="sub">on the workstation (Python)</text>
 
-  <!-- ============ NN-Lite host ============ -->
-  <rect x="248" y="20" width="270" height="468" rx="14" fill="#EAF2FB" stroke="#2F6DB5" stroke-width="1.5"/>
-  <text x="383" y="47" text-anchor="middle" class="ttl" fill="#1B4B82">NN-Lite host</text>
-  <text x="383" y="67" text-anchor="middle" class="sub">Python CLI on a workstation</text>
+  <rect x="228" y="126" width="208" height="62" rx="9" fill="#FFFFFF" stroke="#9CBDE3" stroke-width="1.5"/>
+  <text x="332" y="152" text-anchor="middle" class="b15">Rebuild the network</text>
+  <text x="332" y="173" text-anchor="middle" class="t14">and load its weights</text>
 
-  <!-- stage 1 -->
-  <rect x="262" y="92" width="242" height="80" rx="9" fill="#FFFFFF" stroke="#9CBDE3" stroke-width="1.5"/>
-  <circle cx="286" cy="118" r="13" fill="#2F6DB5"/>
-  <text x="286" y="123" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
-  <text x="308" y="123" class="h">Load</text>
-  <text x="276" y="146" class="t">rebuild the network from code</text>
-  <text x="276" y="163" class="t">and restore its weights</text>
+  <polyline points="332,188 332,212" class="flow"/>
+  <polyline points="332,212 278,212 278,236" class="flow" marker-end="url(#ah)"/>
+  <polyline points="332,212 386,212 386,236" class="flow" marker-end="url(#ah)"/>
+  <text x="340" y="206" font-size="13" font-style="italic" fill="#475569">litert-torch</text>
 
-  <!-- stage 2 -->
-  <rect x="262" y="186" width="242" height="80" rx="9" fill="#FFFFFF" stroke="#9CBDE3" stroke-width="1.5"/>
-  <circle cx="286" cy="212" r="13" fill="#2F6DB5"/>
-  <text x="286" y="217" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">2</text>
-  <text x="308" y="217" class="h">Convert</text>
-  <text x="276" y="240" class="t">litert-torch → .tflite</text>
-  <text x="276" y="257" class="t">FP32 and INT8 (post-training)</text>
+  <rect x="228" y="238" width="100" height="62" rx="9" fill="#DBEAFE" stroke="#60A5FA" stroke-width="1.5"/>
+  <text x="278" y="265" text-anchor="middle" font-size="18" font-weight="700" fill="#1E3A8A">FP32</text>
+  <text x="278" y="287" text-anchor="middle" font-size="13.5" fill="#1E3A8A">32-bit float</text>
+  <rect x="336" y="238" width="100" height="62" rx="9" fill="#DCFCE7" stroke="#4ADE80" stroke-width="1.5"/>
+  <text x="386" y="265" text-anchor="middle" font-size="18" font-weight="700" fill="#14532D">INT8</text>
+  <text x="386" y="287" text-anchor="middle" font-size="13.5" fill="#14532D">8-bit integer</text>
 
-  <!-- stage 3 -->
-  <rect x="262" y="280" width="242" height="80" rx="9" fill="#FFFFFF" stroke="#9CBDE3" stroke-width="1.5"/>
-  <circle cx="286" cy="306" r="13" fill="#2F6DB5"/>
-  <text x="286" y="311" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">3</text>
-  <text x="308" y="311" class="h">Orchestrate</text>
-  <text x="276" y="334" class="t">resumable queue, cool-downs,</text>
-  <text x="276" y="351" class="t">restarts, USB re-connect</text>
+  <polyline points="278,300 278,314 332,314" class="flow"/>
+  <polyline points="386,300 386,314 332,314 332,326" class="flow" marker-end="url(#ah)"/>
 
-  <!-- stage 4 -->
-  <rect x="262" y="374" width="242" height="80" rx="9" fill="#FFFFFF" stroke="#9CBDE3" stroke-width="1.5"/>
-  <circle cx="286" cy="400" r="13" fill="#2F6DB5"/>
-  <text x="286" y="405" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">4</text>
-  <text x="308" y="405" class="h">Record</text>
-  <text x="276" y="428" class="t">one JSON schema, device</text>
-  <text x="276" y="445" class="t">telemetry, per-backend errors</text>
+  <rect x="228" y="328" width="208" height="48" rx="9" fill="#FFFFFF" stroke="#9CBDE3" stroke-width="1.5"/>
+  <text x="332" y="357" text-anchor="middle" class="b15">Copy .tflite to phone</text>
 
-  <line x1="383" y1="172" x2="383" y2="184" class="flow" marker-end="url(#ah)"/>
-  <line x1="383" y1="266" x2="383" y2="278" class="flow" marker-end="url(#ah)"/>
+  <rect x="228" y="394" width="208" height="58" rx="9" fill="#FFF7ED" stroke="#FDBA74" stroke-width="1.5"/>
+  <path d="M248,410 L259,429 L237,429 Z" fill="#F59E0B"/>
+  <text x="248" y="427" text-anchor="middle" font-size="12" font-weight="700" fill="#FFFFFF">!</text>
+  <text x="268" y="418" class="t14">If INT8 fails,</text>
+  <text x="268" y="438" class="t14">FP32 is still measured</text>
 
-  <!-- ============ adb bridge ============ -->
-  <rect x="530" y="92" width="30" height="362" rx="8" fill="#37474F"/>
-  <text transform="translate(550 273) rotate(-90)" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" letter-spacing="1">adb  ·  USB or emulator</text>
+  <!-- ================= 3. Measure on the phone ================= -->
+  <rect x="464" y="60" width="266" height="418" rx="14" fill="#EFF8F2" stroke="#2E8B57" stroke-width="1.5"/>
+  <circle cx="486" cy="84" r="12" fill="#2E8B57"/>
+  <text x="486" y="89" text-anchor="middle" class="num">3</text>
+  <text x="506" y="90" class="ttl">Measure on the phone</text>
 
-  <!-- ============ Android targets ============ -->
-  <rect x="572" y="20" width="316" height="468" rx="14" fill="#EAF6EF" stroke="#2E8B57" stroke-width="1.5"/>
-  <text x="730" y="47" text-anchor="middle" class="ttl" fill="#1D5E3A">Android targets</text>
-  <text x="730" y="67" text-anchor="middle" class="sub">no root, no per-model app build</text>
+  <!-- USB cable -->
+  <path d="M436,352 C492,352 470,490 540,490 L583,490 Q597,490 597,476" fill="none" stroke="#334155" stroke-width="6" stroke-linecap="round"/>
 
-  <!-- physical device -->
-  <rect x="586" y="92" width="288" height="174" rx="10" fill="#FFFFFF" stroke="#8CC7A4" stroke-width="1.5"/>
-  <text x="600" y="119" class="h">Physical device</text>
-  <text x="600" y="141" class="t">native benchmark_model binary</text>
-  <rect x="600" y="158" width="82" height="36" rx="7" fill="#DCE7F5" stroke="#8FA9CC"/>
-  <text x="641" y="181" text-anchor="middle" class="chip">CPU</text>
-  <rect x="689" y="158" width="82" height="36" rx="7" fill="#FBE4CF" stroke="#D9A36D"/>
-  <text x="730" y="181" text-anchor="middle" class="chip">GPU</text>
-  <rect x="778" y="158" width="82" height="36" rx="7" fill="#E9DFF8" stroke="#A58BD1"/>
-  <text x="819" y="181" text-anchor="middle" class="chip">NNAPI</text>
-  <text x="600" y="220" class="t">latency statistics per backend</text>
-  <text x="600" y="238" class="t">plus SoC, CPU and memory probes</text>
-  <text x="600" y="256" class="t">recorded with emulator = false</text>
+  <!-- phone -->
+  <rect x="500" y="104" width="194" height="364" rx="28" fill="#1F2933"/>
+  <rect x="511" y="122" width="172" height="326" rx="14" fill="#F8FAFC"/>
+  <circle cx="597" cy="113" r="3.5" fill="#52606D"/>
+  <rect x="585" y="468" width="24" height="8" rx="2" fill="#52606D"/>
 
-  <!-- emulator -->
-  <rect x="586" y="280" width="288" height="174" rx="10" fill="#FFFFFF" stroke="#8CC7A4" stroke-width="1.5"/>
-  <text x="600" y="307" class="h">Emulator (AVD)</text>
-  <text x="600" y="329" class="t">NN-Lite Android app (Kotlin,</text>
-  <text x="600" y="346" class="t">TFLite Interpreter)</text>
-  <rect x="600" y="360" width="82" height="36" rx="7" fill="#DCE7F5" stroke="#8FA9CC"/>
-  <text x="641" y="383" text-anchor="middle" class="chip">CPU</text>
-  <rect x="689" y="360" width="82" height="36" rx="7" fill="#FBE4CF" stroke="#D9A36D"/>
-  <text x="730" y="383" text-anchor="middle" class="chip">GPU</text>
-  <rect x="778" y="360" width="82" height="36" rx="7" fill="#E9DFF8" stroke="#A58BD1"/>
-  <text x="819" y="383" text-anchor="middle" class="chip">NNAPI</text>
-  <text x="600" y="422" class="t">automatic boot, install and</text>
-  <text x="600" y="440" class="t">crash recovery of the AVD</text>
+  <text x="597" y="146" text-anchor="middle" font-family="DejaVu Sans Mono, Liberation Mono, monospace" font-size="14" font-weight="700" fill="#1F2933">benchmark_model</text>
 
-  <!-- ============ flows: models and commands (solid) ============ -->
-  <!-- LEMUR sources into Load -->
-  <line x1="198" y1="123" x2="260" y2="123" class="flow" marker-end="url(#ah)"/>
-  <polyline points="198,197 226,197 226,123" class="flow"/>
-  <polyline points="198,271 226,271 226,197" class="flow"/>
-  <!-- orchestrate to bridge -->
-  <line x1="504" y1="320" x2="528" y2="320" class="flow" marker-end="url(#ah)"/>
-  <!-- bridge to targets -->
-  <line x1="560" y1="150" x2="584" y2="150" class="flow" marker-end="url(#ah)"/>
-  <line x1="560" y1="338" x2="584" y2="338" class="flow" marker-end="url(#ah)"/>
+  <!-- chip -->
+  <g stroke="#94A3B8" stroke-width="2">
+    <line x1="521" y1="180" x2="527" y2="180"/><line x1="521" y1="210" x2="527" y2="210"/><line x1="521" y1="240" x2="527" y2="240"/>
+    <line x1="521" y1="270" x2="527" y2="270"/><line x1="521" y1="300" x2="527" y2="300"/><line x1="521" y1="330" x2="527" y2="330"/>
+    <line x1="667" y1="180" x2="673" y2="180"/><line x1="667" y1="210" x2="673" y2="210"/><line x1="667" y1="240" x2="673" y2="240"/>
+    <line x1="667" y1="270" x2="673" y2="270"/><line x1="667" y1="300" x2="673" y2="300"/><line x1="667" y1="330" x2="673" y2="330"/>
+  </g>
+  <rect x="527" y="158" width="140" height="196" rx="8" fill="#EEF2F6" stroke="#94A3B8" stroke-width="1.5"/>
+  <text x="597" y="176" text-anchor="middle" font-size="13" font-weight="700" fill="#52606D">phone chip (SoC)</text>
 
-  <!-- ============ flows: measurements (dashed) ============ -->
-  <line x1="586" y1="206" x2="562" y2="206" class="meas" marker-end="url(#ahm)"/>
-  <line x1="586" y1="410" x2="562" y2="410" class="meas" marker-end="url(#ahm)"/>
-  <line x1="530" y1="414" x2="506" y2="414" class="meas" marker-end="url(#ahm)"/>
-  <line x1="262" y1="419" x2="200" y2="419" class="meas" marker-end="url(#ahm)"/>
+  <rect x="539" y="186" width="116" height="46" rx="8" fill="#DCE7F5" stroke="#8FA9CC"/>
+  <circle cx="561" cy="210" r="9" fill="#FFFFFF" stroke="#1F2933" stroke-width="2"/>
+  <rect x="558.5" y="196" width="5" height="4" rx="1" fill="#1F2933"/>
+  <line x1="561" y1="210" x2="561" y2="204" stroke="#1F2933" stroke-width="2" stroke-linecap="round"/>
+  <text x="583" y="215" font-size="16" font-weight="700" fill="#1F2933">CPU</text>
 
-  <!-- ============ legend ============ -->
-  <line x1="236" y1="516" x2="276" y2="516" class="flow" marker-end="url(#ah)"/>
-  <text x="284" y="521" class="t">models, weights and commands</text>
-  <line x1="508" y1="516" x2="548" y2="516" class="meas" marker-end="url(#ahm)"/>
-  <text x="556" y="521" class="t">measurements and errors</text>
+  <rect x="539" y="238" width="116" height="46" rx="8" fill="#FBE4CF" stroke="#D9A36D"/>
+  <circle cx="561" cy="262" r="9" fill="#FFFFFF" stroke="#1F2933" stroke-width="2"/>
+  <rect x="558.5" y="248" width="5" height="4" rx="1" fill="#1F2933"/>
+  <line x1="561" y1="262" x2="561" y2="256" stroke="#1F2933" stroke-width="2" stroke-linecap="round"/>
+  <text x="583" y="267" font-size="16" font-weight="700" fill="#1F2933">GPU</text>
+
+  <rect x="539" y="290" width="116" height="46" rx="8" fill="#E9DFF8" stroke="#A58BD1"/>
+  <circle cx="561" cy="314" r="9" fill="#FFFFFF" stroke="#1F2933" stroke-width="2"/>
+  <rect x="558.5" y="300" width="5" height="4" rx="1" fill="#1F2933"/>
+  <line x1="561" y1="314" x2="561" y2="308" stroke="#1F2933" stroke-width="2" stroke-linecap="round"/>
+  <text x="583" y="319" font-size="16" font-weight="700" fill="#1F2933">NPU</text>
+
+  <text x="597" y="376" text-anchor="middle" class="t14">20 timed runs each</text>
+  <rect x="522" y="390" width="150" height="46" rx="8" fill="#E2E8F0"/>
+  <text x="597" y="408" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1F2933">+ device probe</text>
+  <text x="597" y="426" text-anchor="middle" font-size="13" fill="#323F4B">chip, cores, RAM, OS</text>
+
+
+  <!-- cable tag (drawn above phone) -->
+  <rect x="451" y="380" width="46" height="42" rx="9" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+  <text x="474" y="397" text-anchor="middle" font-size="13.5" font-weight="700" fill="#334155">USB</text>
+  <text x="474" y="414" text-anchor="middle" font-size="13.5" font-weight="700" fill="#334155">adb</text>
+
+  <line x1="696" y1="244" x2="748" y2="244" class="flow" marker-end="url(#ah)"/>
+
+  <!-- ================= 4. Save ================= -->
+  <rect x="742" y="60" width="206" height="418" rx="14" fill="#FFF8E6" stroke="#D69E2E" stroke-width="1.5"/>
+  <circle cx="764" cy="84" r="12" fill="#D69E2E"/>
+  <text x="764" y="89" text-anchor="middle" class="num">4</text>
+  <text x="784" y="90" class="ttl">Save</text>
+  <text x="754" y="112" class="sub">one file per model</text>
+
+  <rect x="750" y="122" width="190" height="232" rx="10" fill="#1E293B"/>
+  <text class="code">
+    <tspan x="760" y="146">{</tspan>
+    <tspan x="766" y="168"><tspan class="k">"device_type"</tspan>: <tspan class="v">…</tspan>,</tspan>
+    <tspan x="766" y="190"><tspan class="k">"emulator"</tspan>: <tspan class="v">false</tspan>,</tspan>
+    <tspan x="766" y="212"><tspan class="k">"cpu_duration"</tspan>: <tspan class="v">…</tspan>,</tspan>
+    <tspan x="766" y="234"><tspan class="k">"gpu_duration"</tspan>: <tspan class="v">…</tspan>,</tspan>
+    <tspan x="766" y="256"><tspan class="k">"npu_duration"</tspan>: <tspan class="v">…</tspan>,</tspan>
+    <tspan x="766" y="278"><tspan class="k">"unit"</tspan>: <tspan class="v">"GPU"</tspan>,</tspan>
+    <tspan x="766" y="300"><tspan class="k">"npu_error"</tspan>: <tspan class="v">…</tspan>,</tspan>
+    <tspan x="766" y="322"><tspan class="k">"device_analytics"</tspan>: <tspan class="v">{…}</tspan></tspan>
+    <tspan x="760" y="344">}</tspan>
+  </text>
+
+  <line x1="845" y1="356" x2="845" y2="376" class="flow" marker-end="url(#ah)"/>
+  <path d="M813,386 V408 A32,8 0 0 0 877,408 V386" fill="#F6DFA8" stroke="#D69E2E" stroke-width="1.5"/>
+  <ellipse cx="845" cy="386" rx="32" ry="8" fill="#FCEFC9" stroke="#D69E2E" stroke-width="1.5"/>
+  <text x="845" y="440" text-anchor="middle" class="b15">Added to LEMUR</text>
+  <text x="845" y="459" text-anchor="middle" class="t14">next to training stats</text>
+
+  <!-- ================= LEMUR into step 2 ================= -->
+  <polyline points="176,214 200,214" class="flow"/>
+  <polyline points="176,266 200,266" class="flow"/>
+  <polyline points="176,318 200,318 200,157 226,157" class="flow" marker-end="url(#ah)"/>
+
+  <!-- ================= safeguards band ================= -->
+  <rect x="12" y="496" width="936" height="136" rx="14" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="28" y="522" font-size="16" font-weight="700" fill="#1F2933">Built to run for days on its own</text>
+
+  <!-- pill: resume -->
+  <rect x="24" y="536" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+  <circle cx="54" cy="578" r="18" fill="#16A34A"/>
+  <path d="M46,578 L52,585 L63,571" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="82" y="562" class="b15">Resume</text>
+  <text x="82" y="582" class="t14">never repeats</text>
+  <text x="82" y="600" class="t14">finished work</text>
+
+  <!-- pill: cool-down -->
+  <rect x="208" y="536" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+  <circle cx="238" cy="578" r="18" fill="#0284C7"/>
+  <rect x="235" y="566" width="6" height="15" rx="3" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  <circle cx="238" cy="585" r="5" fill="#FFFFFF"/>
+  <text x="266" y="562" class="b15">Cool-down</text>
+  <text x="266" y="582" class="t14">rests the phone</text>
+  <text x="266" y="600" class="t14">between models</text>
+
+  <!-- pill: reconnect -->
+  <rect x="392" y="536" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+  <circle cx="422" cy="578" r="18" fill="#EA580C"/>
+  <line x1="418" y1="566" x2="418" y2="572" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="426" y1="566" x2="426" y2="572" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="414" y="572" width="16" height="10" rx="2.5" fill="#FFFFFF"/>
+  <line x1="422" y1="582" x2="422" y2="590" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="450" y="562" class="b15">Reconnect</text>
+  <text x="450" y="582" class="t14">waits if the USB</text>
+  <text x="450" y="600" class="t14">cable drops</text>
+
+  <!-- pill: fresh start -->
+  <rect x="576" y="536" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+  <circle cx="606" cy="578" r="18" fill="#7C3AED"/>
+  <path d="M613,572 A9,9 0 1 0 614,582" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M608,566 L615,571 L608,575 Z" fill="#FFFFFF"/>
+  <text x="634" y="562" class="b15">Fresh start</text>
+  <text x="634" y="582" class="t14">restarts itself</text>
+  <text x="634" y="600" class="t14">every 50 models</text>
+
+  <!-- pill: keep failures -->
+  <rect x="760" y="536" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+  <circle cx="790" cy="578" r="18" fill="#DC2626"/>
+  <path d="M790,567 L800,585 L780,585 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
+  <line x1="790" y1="574" x2="790" y2="579" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="790" cy="582.5" r="1.2" fill="#FFFFFF"/>
+  <text x="818" y="562" class="b15">Keep failures</text>
+  <text x="818" y="582" class="t14">errors saved,</text>
+  <text x="818" y="600" class="t14">never dropped</text>
 </svg>
