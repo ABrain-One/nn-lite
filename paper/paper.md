@@ -158,13 +158,12 @@ filtered without changing downstream code.
 
 NN-Lite is the on-device measurement component of the LEMUR ecosystem
 [@Goodarzi2025LEMUR]. Its emulator path was used to add on-device inference
-latencies for more than 7,500 models to LEMUR 2 [@Uzun2026LEMUR2], and the
-latency dataset produced by the pipeline is described in @Din2026NNLite. With the physical-device engine described here we have
-benchmarked about
-540 LEMUR image-classification architectures, each in FP32 and INT8 and on CPU,
-GPU and NNAPI, on five physical devices covering Qualcomm Snapdragon (720G,
-888), MediaTek Helio G85 and HiSilicon Kirin 710 chipsets, producing more than
-5,400 per-device records. These records are publicly available in the LEMUR
+latencies for more than 7,500 models to LEMUR 2 [@Uzun2026LEMUR2]. With the
+physical-device engine described here, one workstation and five commodity phones
+from three chip vendors (Qualcomm, MediaTek and HiSilicon) benchmarked 586 LEMUR
+architectures in FP32 and INT8 on CPU, GPU and NNAPI, producing 5,826 per-device
+records in about 56 unattended device-hours; this dataset is described in
+@Din2026NNLite. These records are publicly available in the LEMUR
 repository and can be retrieved through its API together with accuracy and
 training metadata.
 
