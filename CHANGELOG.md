@@ -23,6 +23,10 @@ All notable changes to NN-Lite are documented in this file.
 - Result parsing and record construction moved to `ab/lite/results.py`; the record format is
   unchanged.
 - README restructured around installation, connecting a phone and a worked example.
+- `requirements.txt` now lists only direct dependencies, pinned to stable releases where they
+  exist (torch 2.9.1, torchvision 0.24.1, ai-edge-litert 2.0.3, torchao 0.15.0); nightly
+  packages were removed. The previous pin `ai-edge-litert-nightly==2.2.0.dev20260202` is no
+  longer available on PyPI, so fresh installs had failed.
 
 ### Fixed
 - Crash on devices with missing system properties (e.g. HiSilicon Kirin).
