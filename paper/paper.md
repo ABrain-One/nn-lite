@@ -11,14 +11,14 @@ tags:
   - LiteRT
 authors:
   - name: Dmitry Ignatov
-    # orcid: 0000-0000-0000-0000   # TODO: add ORCID
+    orcid: 0000-0002-6339-1200
     affiliation: 1
   - name: Faraz Kayani
-    # orcid: 0000-0000-0000-0000   # TODO: add ORCID
+    orcid: 0009-0000-7769-6016
     corresponding: true
     affiliation: 1
   - name: Radu Timofte
-    # orcid: 0000-0000-0000-0000   # TODO: add ORCID
+    orcid: 0000-0002-1478-0402
     affiliation: 1
 affiliations:
   - name: Computer Vision Lab, CAIDAS & IFI, University of Würzburg, Germany
@@ -169,20 +169,22 @@ training metadata.
 
 # AI usage disclosure
 
-Generative AI was used in preparing this paper. Claude (Anthropic), accessed
-through the Claude Code agent (model version: TODO — to be filled in by the
-authors), was used to draft the text of this manuscript, to assemble
-`paper.bib`, and to draw \autoref{fig:architecture}, based on the repository
-source code and on information supplied by the authors. TODO — authors to state
-whether AI tools (and which tools and versions) were used when writing the
-NN-Lite source code or documentation; if none were, state this explicitly. The
-authors reviewed, edited and validated all AI-assisted content, verified every
-reference, and made all design and architectural decisions for the software.
+The NN-Lite source code, including the physical-device benchmarking engine,
+was written by the authors without generative AI assistance. Claude (Anthropic;
+model version: [MODEL VERSION]), used through the Claude Code agent, assisted with
+drafting the text of this paper, assembling and checking `paper.bib`, drawing
+\autoref{fig:architecture}, and preparing the repository for publication: the
+packaging configuration (`pyproject.toml`), the unit tests and continuous
+integration workflow, a refactoring that moved result parsing into a separate
+testable module without changing the output format, the README, and the
+contributing guidelines. The authors reviewed, edited and validated all
+AI-assisted content, verified every reference, ran the tests, and made all
+design and architectural decisions for the software.
 
 # Acknowledgements
 
-We thank the contributors to the LEMUR dataset and to the emulator-based
-pipeline of NN-Lite [@Din2026NNLite]. TODO — add funding sources,
-or state that this work received no specific funding.
+This work was partially supported by the Alexander von Humboldt Foundation. We
+thank the contributors to the LEMUR dataset and to the emulator-based pipeline
+of NN-Lite [@Din2026NNLite].
 
 # References
