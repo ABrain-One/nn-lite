@@ -12,3 +12,9 @@ nn-dataset/ab/nn/stat/run/
 
 # OS junk
 .DS_Store
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.pytest_cache/
