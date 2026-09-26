@@ -66,7 +66,7 @@ models per device.
 The first version of NN-Lite [@Din2025NNLite] automated conversion and
 execution on Android *emulators*, which verifies that a converted model loads
 and runs but cannot measure real accelerators. The software described here is
-the physical-device engine that replaces that step with measurements on real
+the physical-device engine that extends it with measurements on real
 phones. It targets researchers who train models in PyTorch and need
 reproducible, per-device and per-accelerator latency and feasibility data at
 dataset scale, stored next to the models' accuracy and training records so that
@@ -156,16 +156,16 @@ compared or filtered without changing downstream code.
 # Research impact statement
 
 NN-Lite is the on-device measurement component of the LEMUR ecosystem
-[@Goodarzi2025LEMUR]. With the engine described here we have benchmarked about
+[@Goodarzi2025LEMUR]. Its earlier emulator-based version [@Din2025NNLite] was
+used to add on-device inference latencies for more than 7,500 models to LEMUR 2
+[@Uzun2026LEMUR2]. With the physical-device engine described here we have
+benchmarked about
 540 LEMUR image-classification architectures, each in FP32 and INT8 and on CPU,
 GPU and NNAPI, on five physical devices covering Qualcomm Snapdragon (720G,
 888), MediaTek Helio G85 and HiSilicon Kirin 710 chipsets, producing more than
 5,400 per-device records. These records are publicly available in the LEMUR
 repository and can be retrieved through its API together with accuracy and
-training metadata. The same deployment tooling supports the lab's work on
-mobile-oriented models, including real-image denoising for mobile NPUs
-[@Kayani2026Denoising] and lightweight facial age estimation
-[@Kumar2026MobileAgeNet].
+training metadata.
 
 # AI usage disclosure
 
