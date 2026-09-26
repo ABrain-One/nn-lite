@@ -169,17 +169,13 @@ training metadata.
 
 # AI usage disclosure
 
-The NN-Lite source code, including the physical-device benchmarking engine,
-was written by the authors without generative AI assistance. Claude (Anthropic;
-model version: [MODEL VERSION]), used through the Claude Code agent, assisted with
-drafting the text of this paper, assembling and checking `paper.bib`, drawing
-\autoref{fig:architecture}, and preparing the repository for publication: the
-packaging configuration (`pyproject.toml`), the unit tests and continuous
-integration workflow, a refactoring that moved result parsing into a separate
-testable module without changing the output format, the README, and the
-contributing guidelines. The authors reviewed, edited and validated all
-AI-assisted content, verified every reference, ran the tests, and made all
-design and architectural decisions for the software.
+The NN-Lite physical-device benchmarking engine was designed and written by the
+authors without generative AI assistance. Claude (Anthropic; model version:
+[MODEL VERSION]), used through the Claude Code agent, assisted with drafting the
+text of this paper, assembling and checking `paper.bib`, and drawing
+\autoref{fig:architecture}. The authors reviewed, edited and validated all
+AI-assisted content, verified every reference, and made all design and
+architectural decisions for the software.
 
 # Acknowledgements
 
