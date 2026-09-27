@@ -36,14 +36,13 @@ def default_dataset_root():
 
 def set_dataset_root(root):
     """Point all input and output paths at the given nn-dataset checkout."""
-    global dataset_root, stat_base, int8_dir, fp32_dir, work_dir, data_root, temp_dl_dir, state_file
+    global dataset_root, stat_base, int8_dir, fp32_dir, work_dir, data_root, temp_dl_dir
     dataset_root = Path(root).expanduser().resolve()
     stat_base = dataset_root / "ab" / "nn" / "stat" / "run" /  "tflite"
     int8_dir = stat_base / "int8"
     fp32_dir = stat_base / "fp32"
     work_dir = dataset_root / "_work"
     data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
-    state_file = work_dir / "processing_state_dual.json"
     for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]:
         p.mkdir(parents=True, exist_ok=True)
 
@@ -51,10 +50,12 @@ try:
     from ab.lite.results import (extract_error_from_output, benchmark_failed, failed_result,
                                  parse_benchmark_output, build_record)
     from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images
+    from ab.lite.progress import progress_file, load_progress, save_progress
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
     from preprocess import CIFAR10_NORM, load_transform, calibration_images
+    from progress import progress_file, load_progress, save_progress
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -210,9 +211,6 @@ def main():
     set_dataset_root(args.dataset_root or default_dataset_root())
     arch_dir, transforms_dir = dataset_root / "ab" / "nn" / "nn", dataset_root / "ab" / "nn" / "transform"
 
-    if args.force and state_file.exists(): state_file.unlink()
-    state = json.load(open(state_file)) if state_file.exists() else {"processed": [], "failed": []}
-    
     with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
     
     subprocess.run(["adb", "start-server"], capture_output=True)
@@ -226,6 +224,12 @@ def main():
 
     error_log = work_dir / f"benchmark_errors_{device_clean}.log"
     print(f"[LOG] Benchmark errors will be appended to: {error_log}")
+
+    # Progress is kept per phone, so a new phone starts from the beginning.
+    state_file = progress_file(work_dir, device_clean)
+    if args.force and state_file.exists(): state_file.unlink()
+    state = load_progress(state_file)
+    print(f"[LOG] Progress for this phone: {state_file}")
     
     # INT8 calibration uses real CIFAR-10 training images, preprocessed with each model's own transform.
     calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
@@ -337,7 +341,7 @@ def main():
 
             print(f"   -> Successfully saved FP32 and INT8 stats.")
             state["processed"].append(name)
-            json.dump(state, open(state_file, 'w'), indent=2)
+            save_progress(state_file, state)
             session_counter += 1
             gc.collect()
             if temp_dl_dir.exists(): shutil.rmtree(temp_dl_dir); temp_dl_dir.mkdir()
@@ -345,6 +349,6 @@ def main():
         except Exception as e:
             print(f"   [FAIL] {name}: {e}")
             state["failed"].append(name)
-            json.dump(state, open(state_file, 'w'), indent=2)
+            save_progress(state_file, state)
 
 if __name__ == "__main__": main()
