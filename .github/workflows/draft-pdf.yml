@@ -6,6 +6,9 @@ on:
       - .github/workflows/draft-pdf.yml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   paper:
     runs-on: ubuntu-latest
@@ -14,7 +17,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build draft PDF
-        uses: openjournals/openjournals-draft-action@master
+        # Pinned to a reviewed commit of the Open Journals action (master as of 2026-09-27);
+        # update deliberately when the action changes.
+        uses: openjournals/openjournals-draft-action@af22ceb4b8f9eff6b3a13c05747ccc2f573cf2e6
         with:
           journal: joss
           # This should be the path to the paper within your repo.
