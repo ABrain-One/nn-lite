@@ -100,17 +100,17 @@ An abridged record (latencies are in nanoseconds; `unit` is the fastest backend)
 ```json
 {
   "model_name": "AirNet",
-  "device_type": "SM-F926B",
-  "os_version": "14 | UP1A.231005.007",
+  "device_type": "STK-L21",
+  "os_version": "10 | HUAWEISTK-L21",
   "valid": true,
   "emulator": false,
   "iterations": 20,
-  "duration": 8911880,
+  "duration": 55200000,
   "unit": "GPU",
-  "cpu_duration": 31118100, "cpu_min_duration": 30718000, "cpu_max_duration": 36410000, "cpu_std_dev": 1323000.0,
-  "gpu_duration": 8911880,  "gpu_min_duration": 8875000,  "gpu_max_duration": 9366000,  "gpu_std_dev": 64000.0,
-  "npu_duration": 9140330,  "npu_min_duration": 8863000,  "npu_max_duration": 16004000, "npu_std_dev": 1073000.0,
-  "total_ram_kb": 11631760, "free_ram_kb": 2818008, "available_ram_kb": 5356556, "cached_kb": 4672460,
+  "cpu_duration": 329480000, "cpu_min_duration": 310111000, "cpu_max_duration": 344513000, "cpu_std_dev": 9657000.0,
+  "gpu_duration": 55200000,  "gpu_min_duration": 53553000,  "gpu_max_duration": 60863000,  "gpu_std_dev": 2064000.0,
+  "npu_duration": 364514000, "npu_min_duration": 357856000, "npu_max_duration": 371171000, "npu_std_dev": 6657000.0,
+  "total_ram_kb": 3775716, "free_ram_kb": 189496, "available_ram_kb": 1617764, "cached_kb": 1638264,
   "in_dim_0": 1, "in_dim_1": 128, "in_dim_2": 128, "in_dim_3": 3,
   "device_analytics": { "...": "CPU cores, SoC and ARM architecture of the phone" }
 }
