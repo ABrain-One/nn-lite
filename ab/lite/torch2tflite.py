@@ -3,8 +3,9 @@
 torch2tflite.py - Standard version
 
 Processes every model from nn-dataset/ab/nn/nn/ that has a matching .pth in
-the HF source repo, except those already in processing_state_dual.json's
-'processed' or 'failed' lists.
+the HF source repo, except those already listed as processed or failed in the
+progress file of the connected phone model (_work/processing_state_<model>.json).
+Phones are identified by their model name, as in the result files.
 
 Use this version for normal full-coverage runs on a new device.
 

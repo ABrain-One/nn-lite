@@ -23,9 +23,9 @@ All notable changes to NN-Lite are documented in this file.
 - Result parsing and record construction moved to `ab/lite/results.py`; the record format is
   unchanged.
 - README restructured around installation, connecting a phone and a worked example.
-- Progress is stored per phone (`_work/processing_state_<device>.json`, `ab/lite/progress.py`)
-  instead of in one shared file, so a new phone starts from the beginning and `--force` only
-  resets the connected phone.
+- Progress is stored per phone model (`_work/processing_state_<model>.json`,
+  `ab/lite/progress.py`) instead of in one shared file, so a phone of another model starts from
+  the beginning and `--force` only resets the connected phone model.
 - `requirements.txt` now lists only direct dependencies, pinned to stable releases where they
   exist (torch 2.9.1, torchvision 0.24.1, ai-edge-litert 2.1.2, torchao 0.15.0); nightly
   packages were removed. The previous pin `ai-edge-litert-nightly==2.2.0.dev20260202` is no

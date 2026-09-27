@@ -1,8 +1,12 @@
 """Per-phone progress ledger that makes benchmarking runs resumable.
 
-Each phone gets its own file (``processing_state_<device>.json``) listing the
-models already processed or failed on it, so benchmarking a second phone does
-not skip models that were only measured on the first one.
+Each phone model gets its own file (``processing_state_<model>.json``) listing
+the models already processed or failed on it, so benchmarking a phone of
+another model does not skip models that were only measured on the first one.
+
+Phones are identified by their model name, like the result files
+(``android_<model>.json``): the dataset holds one record per phone model, so a
+second phone of the same model continues where the first one left off.
 """
 import json
 import re

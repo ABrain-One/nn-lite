@@ -132,9 +132,11 @@ nn-lite-bench
 | `--force` | Forget the connected phone's progress and start from the beginning |
 | `--reinstall-bench` | Copy `benchmark_model` to the phone again |
 
-Progress is stored per phone in `nn-dataset/_work/processing_state_<device>.json`; models
-listed there as processed or failed are skipped when the same phone is benchmarked again, while
-a new phone starts from the beginning. `--force` resets the progress of the connected phone only.
+Progress is stored per phone model in `nn-dataset/_work/processing_state_<model>.json`; models
+listed there as processed or failed are skipped when that phone model is benchmarked again,
+while a phone of another model starts from the beginning. `--force` resets the progress of the
+connected phone model only. Like the result files, progress is identified by the phone model, so
+a second phone of the same model continues where the first one left off.
 
 ## Optional: emulator path (Android Studio)
 
