@@ -59,6 +59,11 @@ cd nn-lite
 pip install -e . --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
+If `nn-lite-bench` stops with `ModuleNotFoundError: No module named 'ab.lite'`, your `PYTHONPATH`
+includes a checkout of the NN Dataset, whose `ab` folder then hides the installed one
+(`python -c "import ab; print(ab.__path__)"` shows which is used). Remove that folder from
+`PYTHONPATH`, or run `unset PYTHONPATH`, and try again.
+
 ### Working with an nn-dataset checkout
 
 If you commit results to the NN Dataset, or benchmark models that are newer than the installed
