@@ -35,6 +35,10 @@ All notable changes to NN-Lite are documented in this file.
   could not be imported on Apple Silicon Macs.
 
 ### Fixed
+- The input size of each model is taken from the output of its own transform. It was read as the
+  first number in the transform's source, which is wrong for transforms such as
+  `CenterCrop(32)` followed by `Resize((64, 64))`, so such models were benchmarked at the wrong
+  resolution.
 - INT8 calibration uses 50 real CIFAR-10 training images, preprocessed with each model's own
   transform (`ab/lite/preprocess.py`), instead of random noise. Random-noise calibration, used
   since May 2026, lowered the INT8 accuracy of some models considerably (e.g. AirNet on
