@@ -50,12 +50,12 @@ def set_dataset_root(root):
 try:
     from ab.lite.results import (extract_error_from_output, benchmark_failed, failed_result,
                                  parse_benchmark_output, build_record)
-    from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images
+    from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from ab.lite.progress import progress_file, load_progress, save_progress
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
-    from preprocess import CIFAR10_NORM, load_transform, calibration_images
+    from preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from progress import progress_file, load_progress, save_progress
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
@@ -260,18 +260,23 @@ def main():
         print(f"\n[{idx}/{len(to_process)}] Model: {name}")
         try:
             prm = model_db[name].get("prm", {})
-            target_h = 32
-            tf_name = prm.get('transform', 'default') 
+            tf_name = prm.get('transform', 'default')
             tf_file = transforms_dir / f"{tf_name}.py"
             if tf_file.exists():
-                match = re.search(r"(?:Resize|size|Crop).*?(\d+)", tf_file.read_text(), re.IGNORECASE)
-                if match: 
-                    target_h = int(match.group(1))
-                    print(f"   [DEBUG] Transform: {tf_name} -> Res: {target_h}x{target_h}")
+                model_tf = load_transform(transforms_dir, tf_name)
+                try:
+                    # The input size is what the model's own transform actually produces.
+                    target_h = input_size(model_tf)
+                except Exception:
+                    # Transforms that cannot be applied to a plain image (e.g. detection or
+                    # super-resolution pipelines): fall back to the first number in the source.
+                    match = re.search(r"(?:Resize|size|Crop).*?(\d+)", tf_file.read_text(), re.IGNORECASE)
+                    target_h = int(match.group(1)) if match else 32
+                print(f"   [DEBUG] Transform: {tf_name} -> Res: {target_h}x{target_h}")
             else:
+                model_tf = T.Compose([T.ToTensor(), T.Normalize(*CIFAR10_NORM)])
+                target_h = 32
                 print(f"   [DEBUG] Transform file {tf_name}.py not found. Defaulting to 32x32.")
-            model_tf = (load_transform(transforms_dir, tf_name) if tf_file.exists()
-                        else T.Compose([T.ToTensor(), T.Normalize(*CIFAR10_NORM)]))
 
             pth = Path(hf_hub_download(SOURCE_REPO, f"{name}.pth", cache_dir=str(temp_dl_dir)))
             spec = importlib.util.spec_from_file_location("mod", py_path)

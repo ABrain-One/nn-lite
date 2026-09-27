@@ -21,6 +21,18 @@ def load_transform(transforms_dir, name, norm=CIFAR10_NORM):
     return module.transform(norm)
 
 
+def input_size(transform, probe=None):
+    """Side length of the images ``transform`` produces from a CIFAR-10-sized image.
+
+    Applying the transform is exact, unlike reading a number from its source:
+    e.g. ``CenterCrop(32)`` followed by ``Resize((64, 64))`` yields 64x64 inputs.
+    """
+    if probe is None:
+        from PIL import Image
+        probe = Image.new("RGB", (32, 32))
+    return int(transform(probe).shape[-1])
+
+
 def preprocess(images, transform, size):
     """Apply ``transform`` to PIL images and return a float32 NCHW array of the given size."""
     import numpy as np
