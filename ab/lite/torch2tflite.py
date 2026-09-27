@@ -2,16 +2,18 @@
 """
 torch2tflite.py - Standard version
 
-Processes every model from nn-dataset/ab/nn/nn/ that has a matching .pth in
-the HF source repo, except those already listed as processed or failed in the
-progress file of the connected phone model (_work/processing_state_<model>.json).
-Phones are identified by their model name, as in the result files.
+Processes every LEMUR model that has a matching .pth in the HF source repo,
+except those already listed as processed or failed in the progress file of the
+connected phone model (_work/processing_state_<model>.json). Phones are
+identified by their model name, as in the result files.
 
 Use this version for normal full-coverage runs on a new device.
 
-The nn-dataset checkout is located with --dataset-root, the NN_DATASET_ROOT
-environment variable, or (by default) a sibling "nn-dataset" folder next to
-the nn-lite checkout.
+Models are read from an nn-dataset checkout if one is given with --dataset-root
+or NN_DATASET_ROOT, or found in an "nn-dataset" folder next to the nn-lite
+checkout or in the current folder; results are then written into that checkout. Otherwise they are read
+from the installed nn-dataset package and results are written to
+./nn-lite-results. --out chooses another results folder in both cases.
 """
 import sys, os, argparse, json, re, subprocess, importlib.util, shutil, time, gc
 from pathlib import Path
@@ -27,22 +29,23 @@ script_path = Path(__file__).resolve()
 project_root = script_path.parents[3]
 
 def default_dataset_root():
-    env = os.environ.get("NN_DATASET_ROOT")
-    if env:
-        return Path(env).expanduser().resolve()
-    sibling = project_root / "nn-dataset"
-    if sibling.exists():
-        return sibling
-    return Path.cwd() / "nn-dataset"
+    """The nn-dataset checkout from NN_DATASET_ROOT, next to the nn-lite checkout or in the
+    current folder, or None when there is none and the installed nn-dataset package is used."""
+    return find_checkout(None, os.environ.get("NN_DATASET_ROOT"),
+                         project_root / "nn-dataset", Path.cwd() / "nn-dataset")
 
 def set_dataset_root(root):
-    """Point all input and output paths at the given nn-dataset checkout."""
-    global dataset_root, stat_base, int8_dir, fp32_dir, work_dir, data_root, temp_dl_dir
-    dataset_root = Path(root).expanduser().resolve()
-    stat_base = dataset_root / "ab" / "nn" / "stat" / "run" /  "tflite"
+    """Point all output paths at the given nn-dataset checkout."""
+    set_results_root(root)
+
+def set_results_root(root):
+    """Point all output paths at ``root``: an nn-dataset checkout or a results folder with the same layout."""
+    global results_root, stat_base, int8_dir, fp32_dir, work_dir, data_root, temp_dl_dir
+    results_root = Path(root).expanduser().resolve()
+    stat_base = results_root / "ab" / "nn" / "stat" / "run" /  "tflite"
     int8_dir = stat_base / "int8"
     fp32_dir = stat_base / "fp32"
-    work_dir = dataset_root / "_work"
+    work_dir = results_root / "_work"
     data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
     for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]:
         p.mkdir(parents=True, exist_ok=True)
@@ -52,11 +55,13 @@ try:
                                  parse_benchmark_output, build_record)
     from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from ab.lite.progress import progress_file, load_progress, save_progress
+    from ab.lite.sources import find_checkout, CheckoutSource, PackageSource
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
     from preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from progress import progress_file, load_progress, save_progress
+    from sources import find_checkout, CheckoutSource, PackageSource
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -95,7 +100,7 @@ def setup_benchmark_binary(force=False):
     candidates = [
         script_path.parent / "benchmark_model",
         project_root / "benchmark_model",
-        dataset_root / "benchmark_model",
+        results_root / "benchmark_model",
         Path.cwd() / "benchmark_model",
     ]
     local_binary = next((c for c in candidates if c.exists()), None)
@@ -205,12 +210,30 @@ def main():
     ap.add_argument("--reinstall-bench", action="store_true",
                     help="Force re-push of benchmark_model binary to device")
     ap.add_argument("--dataset-root", default=None,
-                    help="Path to the nn-dataset checkout (default: $NN_DATASET_ROOT or ../nn-dataset)")
+                    help="nn-dataset checkout to read models from and write results into "
+                         "(default: $NN_DATASET_ROOT, or an nn-dataset folder next to the nn-lite checkout "
+                         "or in the current folder; without one, the installed nn-dataset package is used)")
+    ap.add_argument("--out", default=None,
+                    help="Folder for the results (default: the nn-dataset checkout, or ./nn-lite-results "
+                         "when the installed package is used)")
     ap.add_argument("--models", nargs="+", default=None,
                     help="Only process these model names (default: all models)")
     args = ap.parse_args()
-    set_dataset_root(args.dataset_root or default_dataset_root())
-    arch_dir, transforms_dir = dataset_root / "ab" / "nn" / "nn", dataset_root / "ab" / "nn" / "transform"
+    try:
+        checkout = find_checkout(args.dataset_root, os.environ.get("NN_DATASET_ROOT"),
+                                 project_root / "nn-dataset", Path.cwd() / "nn-dataset")
+    except ValueError as e:
+        ap.error(str(e))
+    set_results_root(args.out or checkout or "nn-lite-results")
+    if checkout:
+        print(f"[SETUP] Models are read from the nn-dataset checkout {checkout}")
+        source = CheckoutSource(checkout)
+    else:
+        print("[SETUP] Models are read from the installed nn-dataset package")
+        if not (work_dir / "lemur" / "db" / "ab.nn.db").exists():
+            print("[SETUP] Downloading the LEMUR database (about 1.2 GB unpacked); this happens only once")
+        source = PackageSource.open(work_dir / "lemur", work_dir / "code")
+    print(f"[SETUP] Results are written to {results_root}")
 
     with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
     
@@ -236,24 +259,27 @@ def main():
     calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
 
     hf_files = list_repo_files(SOURCE_REPO)
-    py_files = sorted([p for p in arch_dir.rglob("*.py") if f"{p.stem}.pth" in hf_files])
+    names = sorted(n for n in source.names() if f"{n}.pth" in hf_files)
     if args.models:
-        py_files = [p for p in py_files if p.stem in set(args.models)]
-    to_process = [p for p in py_files
-                  if p.stem not in set(state["processed"])
-                  and p.stem not in set(state["failed"])]
+        unknown = sorted(set(args.models) - set(names))
+        if unknown:
+            print(f"[WARN] No model code or checkpoint for: {', '.join(unknown)}")
+        names = [n for n in names if n in set(args.models)]
+    to_process = [n for n in names
+                  if n not in set(state["processed"])
+                  and n not in set(state["failed"])]
 
     print(f"\n[DUAL RUN] Device: {device_model} | Remaining: {len(to_process)}")
 
     session_counter = 0
-    for idx, py_path in enumerate(to_process, 1):
-        name = py_path.stem
+    for idx, name in enumerate(to_process, 1):
         time.sleep(COOL_DOWN_MODEL)
         
         if session_counter >= RESTART_EVERY_N_MODELS:
             print(f"\n[THERMAL] Resetting Session...")
             time.sleep(COOL_DOWN_SESSION)
-            restart_args = ["--android-runs", str(args.android_runs), "--dataset-root", str(dataset_root)]
+            restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root)]
+            if checkout: restart_args += ["--dataset-root", str(checkout)]
             if args.models: restart_args += ["--models", *args.models]
             os.execv(sys.executable, [sys.executable, sys.argv[0]] + restart_args)
 
@@ -261,9 +287,9 @@ def main():
         try:
             prm = model_db[name].get("prm", {})
             tf_name = prm.get('transform', 'default')
-            tf_file = transforms_dir / f"{tf_name}.py"
-            if tf_file.exists():
-                model_tf = load_transform(transforms_dir, tf_name)
+            tf_file = source.transform_file(tf_name)
+            if tf_file:
+                model_tf = load_transform(tf_file.parent, tf_name)
                 try:
                     # The input size is what the model's own transform actually produces.
                     target_h = input_size(model_tf)
@@ -279,9 +305,10 @@ def main():
                 print(f"   [DEBUG] Transform file {tf_name}.py not found. Defaulting to 32x32.")
 
             pth = Path(hf_hub_download(SOURCE_REPO, f"{name}.pth", cache_dir=str(temp_dl_dir)))
-            spec = importlib.util.spec_from_file_location("mod", py_path)
+            spec = importlib.util.spec_from_file_location("mod", source.model_file(name))
             mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-            model = mod.Net((1,3,32,32), (10,), prm, "cpu")
+            # Build the model for the input size it was trained with, as nn-dataset does.
+            model = mod.Net((1,3,target_h,target_h), (10,), prm, "cpu")
             ckpt = torch.load(pth, map_location="cpu")
             model.load_state_dict(ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt, strict=False)
             model.eval()

@@ -5,6 +5,7 @@ venv/
 
 nn-dataset/_work/
 nn-dataset/ab/nn/stat/run/
+nn-lite-results/
 
 # Large binaries (Weights and Models)
 *.pth

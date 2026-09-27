@@ -16,9 +16,17 @@ All notable changes to NN-Lite are documented in this file.
   checkout; `--models` option to benchmark selected models only.
 - Unit tests for output parsing, error extraction and the record schema, with GitHub Actions CI.
 - `CONTRIBUTING.md` with support and governance information.
-- JOSS paper draft in `paper/`.
+- JOSS paper draft in `doc/joss-paper/`.
 
 ### Changed
+- The NN Dataset package is now a dependency, and models and transforms are read from it by
+  default (`ab/lite/sources.py`), so `pip install nn-lite` is all that is needed. The LEMUR
+  database is downloaded on first use; results are written to `./nn-lite-results` (or `--out`)
+  in the dataset's layout. An nn-dataset checkout given with `--dataset-root` or
+  `NN_DATASET_ROOT`, or found next to a source checkout of NN-Lite or in the current folder, is
+  still read from and written into as before.
+- `ab/__init__.py` extends its search path, so `ab.lite` from a source checkout and `ab.nn` from
+  the installed NN Dataset package can be imported together.
 - Conversion now uses `litert-torch` (formerly `ai-edge-torch`), including in the emulator path.
 - Result parsing and record construction moved to `ab/lite/results.py`; the record format is
   unchanged.
@@ -35,6 +43,10 @@ All notable changes to NN-Lite are documented in this file.
   could not be imported on Apple Silicon Macs.
 
 ### Fixed
+- Models are built for the input size they were trained with, as in the NN Dataset, instead of
+  always for 32x32 inputs; this matters for architectures whose layers depend on the input size.
+- A `--dataset-root` or `NN_DATASET_ROOT` that is not an nn-dataset checkout is reported as an
+  error; previously the run found no models and ended with "Remaining: 0".
 - The input size of each model is taken from the output of its own transform. It was read as the
   first number in the transform's source, which is wrong for transforms such as
   `CenterCrop(32)` followed by `Resize((64, 64))`, so such models were benchmarked at the wrong
