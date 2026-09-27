@@ -129,11 +129,12 @@ nn-lite-bench
 | `--models NAME [NAME ...]` | Only process these models |
 | `--android-runs N` | Timed runs per backend (default 20) |
 | `--dataset-root PATH` | Location of the `nn-dataset` checkout |
-| `--force` | Forget earlier progress and start from the beginning |
+| `--force` | Forget the connected phone's progress and start from the beginning |
 | `--reinstall-bench` | Copy `benchmark_model` to the phone again |
 
-Progress is stored in `nn-dataset/_work/processing_state_dual.json`; models listed there as
-processed or failed are skipped on the next run.
+Progress is stored per phone in `nn-dataset/_work/processing_state_<device>.json`; models
+listed there as processed or failed are skipped when the same phone is benchmarked again, while
+a new phone starts from the beginning. `--force` resets the progress of the connected phone only.
 
 ## Optional: emulator path (Android Studio)
 
