@@ -172,7 +172,7 @@ training metadata.
 
 The NN-Lite physical-device benchmarking engine was designed and written by the
 authors without generative AI assistance. Claude (Anthropic; model version:
-[MODEL VERSION]), used through the Claude Code agent, assisted with drafting the
+claude-opus-5-5), used through the Claude Code agent, assisted with drafting the
 text of this paper, assembling and checking `paper.bib`, and drawing
 \autoref{fig:architecture}. The authors reviewed, edited and validated all
 AI-assisted content, verified every reference, and made all design and
