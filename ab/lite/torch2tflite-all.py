@@ -8,10 +8,9 @@ import json
 from ab.nn.util.Const import out_dir
 from typing import List, Dict, Any, Tuple
 import torch
-import ai_edge_torch
+import litert_torch as ai_edge_torch  # package renamed from ai-edge-torch
 from ab.nn.api import data
 from ab.lite.data_loader import RepresentativeDataset
-import ai_edge_torch.quantize as q
 import importlib
 import logging
 import traceback

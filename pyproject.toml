@@ -1,0 +1,48 @@
+[build-system]
+requires = ['setuptools', 'wheel']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'nn-lite'
+dynamic = ['version', 'dependencies']
+description = 'Automated PyTorch-to-Android conversion and benchmarking on physical mobile devices'
+readme = { file = 'README.md', content-type = 'text/markdown' }
+license = { file = 'LICENSE' }
+requires-python = '>=3.10'
+classifiers = [
+    'Programming Language :: Python :: 3',
+    'License :: OSI Approved :: MIT License',
+    'Operating System :: OS Independent',
+    'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    'Topic :: System :: Benchmark',
+    'Intended Audience :: Developers',
+    'Intended Audience :: Science/Research',
+]
+keywords = ['on-device inference', 'Android', 'mobile AI', 'benchmarking', 'TensorFlow Lite', 'LiteRT', 'quantization', 'NNAPI', 'PyTorch', 'edge AI']
+authors = [{ name = 'ABrain One and contributors', email = 'AI@ABrain.one' }]
+
+[project.urls]
+Homepage = 'https://ABrain.one'
+Repository = 'https://github.com/ABrain-One/nn-lite'
+'Bug Tracker' = 'https://github.com/ABrain-One/nn-lite/issues'
+
+[project.scripts]
+nn-lite-bench = 'ab.lite.torch2tflite:main'
+
+[project.optional-dependencies]
+emulator = ['nn-dataset']
+
+[tool.setuptools.dynamic]
+version = { file = 'version' }
+dependencies = { file = 'requirements.txt' }
+
+[tool.setuptools.packages.find]
+where = ['.']
+include = ['ab', 'ab.*']
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+'ab.lite' = ['benchmark_model']
+'*' = ['requirements.txt', 'README.md', 'LICENSE', 'version']
