@@ -16,6 +16,10 @@ All notable changes to NN-Lite are documented in this file.
   checkout; `--models` option to benchmark selected models only.
 - Unit tests for output parsing, error extraction and the record schema, with GitHub Actions CI.
 - `CONTRIBUTING.md` with support and governance information.
+- `--model-path` option to benchmark models from local files, without the NN Dataset
+  (`ab/lite/local_models.py`): `.pt2` files saved with `torch.export`, or a `.py` file with a
+  `.pt`/`.pth` file of the same name holding the weights or the whole model. INT8 is calibrated
+  with images given with `--calib-dir`; results are written to `nn-lite-results/custom/`.
 - JOSS paper draft in `doc/joss-paper/`.
 
 ### Changed

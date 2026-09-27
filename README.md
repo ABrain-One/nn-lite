@@ -146,6 +146,7 @@ nn-lite-bench
 | `--android-runs N` | Timed runs per backend (default 20) |
 | `--dataset-root PATH` | Read models from this `nn-dataset` checkout and write results into it |
 | `--out PATH` | Write results to this folder instead (default: the checkout, or `./nn-lite-results`) |
+| `--model-path PATH [PATH ...]` | Benchmark your own models instead (see [Your own models](#your-own-models)) |
 | `--force` | Forget the connected phone's progress and start from the beginning |
 | `--reinstall-bench` | Copy `benchmark_model` to the phone again |
 
@@ -154,6 +155,36 @@ listed there as processed or failed are skipped when that phone model is benchma
 while a phone of another model starts from the beginning. `--force` resets the progress of the
 connected phone model only. Like the result files, progress is identified by the phone model, so
 a second phone of the same model continues where the first one left off.
+
+## Your own models
+
+NN-Lite also benchmarks models that are not part of the NN Dataset, without using the dataset at
+all. Give the model files, or folders containing them, with `--model-path`:
+```bash
+nn-lite-bench --model-path my_models/ --calib-dir sample_images/
+```
+Each model is either
+
+- a **`.pt2` file** saved with [`torch.export`](https://docs.pytorch.org/docs/stable/export.html):
+  it needs no Python code, and its input shape is stored in the file:
+  ```python
+  torch.export.save(torch.export.export(model.eval(), (torch.randn(1, 3, 224, 224),)), "mymodel.pt2")
+  ```
+- or a **`.py` file with a `.pt` or `.pth` file of the same name** next to it (`mymodel.py` and
+  `mymodel.pth`), holding either the weights (`torch.save(model.state_dict(), ...)`) or the whole
+  model (`torch.save(model, ...)`). NN-Lite builds the network with `create_model()` if the `.py`
+  file defines one, otherwise with `Net()` or the file's only model class. The input is
+  `--input-size` pixels square (default 224).
+
+A `.pt` file alone is not enough: it holds the weights but not the code that defines the network,
+so PyTorch cannot rebuild the model from it. Load whole-model files only from sources you trust,
+as loading them can run code stored in the file.
+
+FP32 is always benchmarked. INT8 needs sample inputs for calibration: pass a folder of images with
+`--calib-dir` (up to 50 are used). They are resized to the model's input and normalised with the
+ImageNet statistics, unless the `.py` file defines `input_transform`, a function that turns a PIL
+image into a tensor. Results are written to `nn-lite-results/custom/{fp32,int8}/<model>/`, in the
+same format as the dataset's records.
 
 ## Contributing results to the dataset
 

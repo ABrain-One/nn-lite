@@ -14,6 +14,9 @@ or NN_DATASET_ROOT, or found in an "nn-dataset" folder next to the nn-lite
 checkout or in the current folder; results are then written into that checkout. Otherwise they are read
 from the installed nn-dataset package and results are written to
 ./nn-lite-results. --out chooses another results folder in both cases.
+
+With --model-path, models are read from local files instead (see
+ab/lite/local_models.py) and the NN Dataset is not used at all.
 """
 import sys, os, argparse, json, re, subprocess, importlib.util, shutil, time, gc
 from pathlib import Path
@@ -47,7 +50,7 @@ def set_results_root(root):
     fp32_dir = stat_base / "fp32"
     work_dir = results_root / "_work"
     data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
-    for p in [int8_dir, fp32_dir, data_root, temp_dl_dir]:
+    for p in [data_root, temp_dl_dir]:
         p.mkdir(parents=True, exist_ok=True)
 
 try:
@@ -56,12 +59,14 @@ try:
     from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from ab.lite.progress import progress_file, load_progress, save_progress
     from ab.lite.sources import find_checkout, CheckoutSource, PackageSource
+    from ab.lite.local_models import find_models, load_local_model, calibration_set, default_transform
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
     from preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from progress import progress_file, load_progress, save_progress
     from sources import find_checkout, CheckoutSource, PackageSource
+    from local_models import find_models, load_local_model, calibration_set, default_transform
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -223,29 +228,49 @@ def main():
                          "when the installed package is used)")
     ap.add_argument("--models", nargs="+", default=None,
                     help="Only process these model names (default: all models)")
+    ap.add_argument("--model-path", "--model_path", nargs="+", default=None,
+                    help="Benchmark models from these files or folders instead of the NN Dataset: "
+                         ".pt2 files saved with torch.export, or .py files with a .pt/.pth file of the same name")
+    ap.add_argument("--input-size", type=int, default=224,
+                    help="Input side length for --model-path models given as .py and .pt files (default: 224)")
+    ap.add_argument("--calib-dir", default=None,
+                    help="Folder of sample images for INT8 calibration of --model-path models "
+                         "(without it, only FP32 is benchmarked)")
     args = ap.parse_args()
-    try:
-        checkout = find_checkout(args.dataset_root, os.environ.get("NN_DATASET_ROOT"),
-                                 project_root / "nn-dataset", Path.cwd() / "nn-dataset")
-    except ValueError as e:
-        ap.error(str(e))
-    set_results_root(args.out or checkout or "nn-lite-results")
-    if checkout:
-        print(f"[SETUP] Models are read from the nn-dataset checkout {checkout}")
-        source = CheckoutSource(checkout)
+    local = checkout = None
+    if args.model_path:
+        try:
+            local, warnings = find_models(args.model_path)
+            calib_set = calibration_set(args.calib_dir) if args.calib_dir else None
+        except ValueError as e:
+            ap.error(str(e))
+        for w in warnings: print(f"[WARN] {w}")
+        set_results_root(args.out or "nn-lite-results")
+        print(f"[SETUP] {len(local)} model(s) from --model-path; the NN Dataset is not used")
     else:
-        print("[SETUP] Models are read from the installed nn-dataset package")
-        if not (work_dir / "lemur" / "db" / "ab.nn.db").exists():
-            print("[SETUP] Downloading the LEMUR database (about 1.2 GB unpacked); this happens only once")
-        source = PackageSource.open(work_dir / "lemur", work_dir / "code")
+        try:
+            checkout = find_checkout(args.dataset_root, os.environ.get("NN_DATASET_ROOT"),
+                                     project_root / "nn-dataset", Path.cwd() / "nn-dataset")
+        except ValueError as e:
+            ap.error(str(e))
+        set_results_root(args.out or checkout or "nn-lite-results")
+        if checkout:
+            print(f"[SETUP] Models are read from the nn-dataset checkout {checkout}")
+            source = CheckoutSource(checkout)
+        else:
+            print("[SETUP] Models are read from the installed nn-dataset package")
+            if not (work_dir / "lemur" / "db" / "ab.nn.db").exists():
+                print("[SETUP] Downloading the LEMUR database (about 1.2 GB unpacked); this happens only once")
+            source = PackageSource.open(work_dir / "lemur", work_dir / "code")
     print(f"[SETUP] Results are written to {results_root}")
 
-    with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
-    
+    if not local:
+        with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
+
     subprocess.run(["adb", "start-server"], capture_output=True)
     subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
     setup_benchmark_binary(force=args.reinstall_bench, checkout=checkout)
-    
+
     gpu_full_name = get_gpu_name()
     device_model = adb_getprop("ro.product.model")
     device_clean = device_model.replace(" ", "_")
@@ -255,16 +280,18 @@ def main():
     print(f"[LOG] Benchmark errors will be appended to: {error_log}")
 
     # Progress is kept per phone, so a new phone starts from the beginning.
-    state_file = progress_file(work_dir, device_clean)
+    state_file = progress_file(work_dir, device_clean + ("_custom" if local else ""))
     if args.force and state_file.exists(): state_file.unlink()
     state = load_progress(state_file)
     print(f"[LOG] Progress for this phone: {state_file}")
-    
-    # INT8 calibration uses real CIFAR-10 training images, preprocessed with each model's own transform.
-    calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
 
-    hf_files = list_repo_files(SOURCE_REPO)
-    names = sorted(n for n in source.names() if f"{n}.pth" in hf_files)
+    if local:
+        names = sorted(local)
+    else:
+        # INT8 calibration uses real CIFAR-10 training images, preprocessed with each model's own transform.
+        calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
+        hf_files = list_repo_files(SOURCE_REPO)
+        names = sorted(n for n in source.names() if f"{n}.pth" in hf_files)
     if args.models:
         unknown = sorted(set(args.models) - set(names))
         if unknown:
@@ -285,40 +312,49 @@ def main():
             time.sleep(COOL_DOWN_SESSION)
             restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root)]
             if checkout: restart_args += ["--dataset-root", str(checkout)]
+            if local:
+                restart_args += ["--model-path", *args.model_path, "--input-size", str(args.input_size)]
+                if args.calib_dir: restart_args += ["--calib-dir", args.calib_dir]
             if args.models: restart_args += ["--models", *args.models]
             os.execv(sys.executable, [sys.executable, sys.argv[0]] + restart_args)
 
         print(f"\n[{idx}/{len(to_process)}] Model: {name}")
         try:
-            prm = model_db[name].get("prm", {})
-            tf_name = prm.get('transform', 'default')
-            tf_file = source.transform_file(tf_name)
-            if tf_file:
-                model_tf = load_transform(tf_file.parent, tf_name)
-                try:
-                    # The input size is what the model's own transform actually produces.
-                    target_h = input_size(model_tf)
-                except Exception:
-                    # Transforms that cannot be applied to a plain image (e.g. detection or
-                    # super-resolution pipelines): fall back to the first number in the source.
-                    match = re.search(r"(?:Resize|size|Crop).*?(\d+)", tf_file.read_text(), re.IGNORECASE)
-                    target_h = int(match.group(1)) if match else 32
-                print(f"   [DEBUG] Transform: {tf_name} -> Res: {target_h}x{target_h}")
+            if local:
+                model, shape, model_tf = load_local_model(local[name], args.input_size)
+                model_tf = model_tf or default_transform(shape)
+                print(f"   [DEBUG] Input: {'x'.join(map(str, shape))}")
             else:
-                model_tf = T.Compose([T.ToTensor(), T.Normalize(*CIFAR10_NORM)])
-                target_h = 32
-                print(f"   [DEBUG] Transform file {tf_name}.py not found. Defaulting to 32x32.")
+                prm = model_db[name].get("prm", {})
+                tf_name = prm.get('transform', 'default')
+                tf_file = source.transform_file(tf_name)
+                if tf_file:
+                    model_tf = load_transform(tf_file.parent, tf_name)
+                    try:
+                        # The input size is what the model's own transform actually produces.
+                        target_h = input_size(model_tf)
+                    except Exception:
+                        # Transforms that cannot be applied to a plain image (e.g. detection or
+                        # super-resolution pipelines): fall back to the first number in the source.
+                        match = re.search(r"(?:Resize|size|Crop).*?(\d+)", tf_file.read_text(), re.IGNORECASE)
+                        target_h = int(match.group(1)) if match else 32
+                    print(f"   [DEBUG] Transform: {tf_name} -> Res: {target_h}x{target_h}")
+                else:
+                    model_tf = T.Compose([T.ToTensor(), T.Normalize(*CIFAR10_NORM)])
+                    target_h = 32
+                    print(f"   [DEBUG] Transform file {tf_name}.py not found. Defaulting to 32x32.")
 
-            pth = Path(hf_hub_download(SOURCE_REPO, f"{name}.pth", cache_dir=str(temp_dl_dir)))
-            spec = importlib.util.spec_from_file_location("mod", source.model_file(name))
-            mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-            # Build the model for the input size it was trained with, as nn-dataset does.
-            model = mod.Net((1,3,target_h,target_h), (10,), prm, "cpu")
-            ckpt = torch.load(pth, map_location="cpu")
-            model.load_state_dict(ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt, strict=False)
-            model.eval()
+                pth = Path(hf_hub_download(SOURCE_REPO, f"{name}.pth", cache_dir=str(temp_dl_dir)))
+                spec = importlib.util.spec_from_file_location("mod", source.model_file(name))
+                mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+                # Build the model for the input size it was trained with, as nn-dataset does.
+                model = mod.Net((1,3,target_h,target_h), (10,), prm, "cpu")
+                ckpt = torch.load(pth, map_location="cpu")
+                model.load_state_dict(ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt, strict=False)
+                model.eval()
+                shape = (1, 3, target_h, target_h)
 
-            dummy_input = (torch.randn(1, 3, target_h, target_h),)
+            dummy_input = (torch.randn(*shape),)
 
             # --- PROCESS FP32 ---
             print(f"   [PROCESS] FP32 Conversion...")
@@ -326,31 +362,33 @@ def main():
             litert_torch.convert(model, dummy_input).export(str(fp32_tflite))
             
             # --- PROCESS INT8 ---
-            print(f"   [PROCESS] INT8 Conversion...")
             int8_tflite = temp_dl_dir / f"{name}_int8.tflite"
             int8_success = False
-            
-            try:
-                calib = calibration_images(calib_set, model_tf, target_h)
-                def rep():
-                    for j in range(len(calib)):
-                        yield [calib[j:j + 1]]
+            if calib_set is None:
+                print(f"   [INFO] INT8 skipped: give --calib-dir with sample images to calibrate it.")
+            else:
+                print(f"   [PROCESS] INT8 Conversion...")
+                try:
+                    calib = calibration_images(calib_set, model_tf, shape[2:])
+                    def rep():
+                        for j in range(len(calib)):
+                            yield [calib[j:j + 1]]
                 
-                litert_torch.convert(
-                    model,
-                    dummy_input,
-                    _ai_edge_converter_flags={
-                        'optimizations': [tf.lite.Optimize.DEFAULT], 
-                        'representative_dataset': rep, 
-                        'target_spec': {'supported_ops': [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]}, 
-                        'inference_input_type': tf.int8, 
-                        'inference_output_type': tf.int8
-                    }
-                ).export(str(int8_tflite))
-                int8_success = True
+                    litert_torch.convert(
+                        model,
+                        dummy_input,
+                        _ai_edge_converter_flags={
+                            'optimizations': [tf.lite.Optimize.DEFAULT],
+                            'representative_dataset': rep,
+                            'target_spec': {'supported_ops': [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]},
+                            'inference_input_type': tf.int8,
+                            'inference_output_type': tf.int8
+                        }
+                    ).export(str(int8_tflite))
+                    int8_success = True
 
-            except Exception as e_int8:
-                print(f"   [WARN] INT8 Conversion failed: {e_int8}. Proceeding with FP32 benchmark only.")
+                except Exception as e_int8:
+                    print(f"   [WARN] INT8 Conversion failed: {e_int8}. Proceeding with FP32 benchmark only.")
 
             models_to_bench = [("fp32", fp32_tflite, fp32_dir)]
             if int8_success:
@@ -367,17 +405,20 @@ def main():
 
                 memory = get_android_memory()
                 final_data = build_record(name, device_model, os_ver, args.android_runs,
-                                          {"cpu": c, "gpu": g, "npu": n}, memory, target_h,
+                                          {"cpu": c, "gpu": g, "npu": n}, memory, shape,
                                           get_device_analytics())
                 if not final_data["valid"]:
                     print(f"   [INVALID] {mode.upper()}: all backends failed, marking valid=false")
 
-                model_folder = save_dir / f"img-classification_cifar-10_acc_{name}"
+                if local:
+                    model_folder = results_root / "custom" / mode / name
+                else:
+                    model_folder = save_dir / f"img-classification_cifar-10_acc_{name}"
                 model_folder.mkdir(parents=True, exist_ok=True)
                 with open(model_folder / f"android_{device_clean}.json", "w") as f: 
                     json.dump(final_data, f, indent=2)
 
-            print(f"   -> Successfully saved FP32 and INT8 stats.")
+            print(f"   -> Successfully saved {' and '.join(m.upper() for m, _, _ in models_to_bench)} stats.")
             state["processed"].append(name)
             save_progress(state_file, state)
             session_counter += 1

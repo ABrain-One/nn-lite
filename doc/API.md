@@ -24,6 +24,8 @@ the equivalent command is `python -m ab.lite.torch2tflite`.
 ```bash
 nn-lite-bench [--models NAME [NAME ...]] [--android-runs N]
               [--dataset-root PATH] [--out PATH] [--force] [--reinstall-bench]
+nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
+              [--models NAME [NAME ...]] [--android-runs N] [--out PATH] [--force]
 ```
 
 | Option | Default | Meaning |
@@ -34,6 +36,9 @@ nn-lite-bench [--models NAME [NAME ...]] [--android-runs N]
 | `--out PATH` | the checkout, or `./nn-lite-results` | Folder the records and working files are written to. |
 | `--force` | off | Delete the progress ledger of the connected phone and start from the beginning. Other phones are unaffected. |
 | `--reinstall-bench` | off | Push the `benchmark_model` binary to the phone again, even if it is already present. |
+| `--model-path PATH [PATH ...]` | off | Benchmark models from local files or folders instead of the NN Dataset (see below). `--model_path` is accepted too. |
+| `--input-size N` | `224` | Square input size for `--model-path` models given as `.py` and `.pt`/`.pth` files. |
+| `--calib-dir DIR` | none | Images for INT8 calibration of `--model-path` models; without it only FP32 is benchmarked. |
 
 Exactly one phone must be attached and authorised (`adb devices` must list it in
 state `device`).
@@ -56,6 +61,29 @@ The first lines of the output say which source and results folder are used.
 ```bash
 export NN_DATASET_ROOT=/data/nn-dataset
 nn-lite-bench --models AirNet
+```
+
+### Models from local files
+
+With `--model-path`, the NN Dataset is not used at all. Each path is a file or a
+folder of files:
+
+- `<name>.pt2`: a model saved with `torch.export.save`. No Python code is needed;
+  the input shape is read from the file.
+- `<name>.py` with `<name>.pt` or `<name>.pth` next to it: the model's code and
+  either its `state_dict` (also inside a checkpoint dictionary under `state_dict`,
+  `model_state_dict` or `model`) or the whole model saved with `torch.save(model)`.
+  The network is created with `create_model()` if the `.py` file defines it,
+  otherwise with `Net()` or the file's only `nn.Module` subclass. An optional
+  `input_transform(image)` turns a PIL image into a CHW tensor for calibration;
+  by default images are resized and normalised with the ImageNet statistics.
+
+A `.pt`/`.pth` file without its `.py` file is an error when given directly and a
+warning inside a folder, as it cannot be converted on its own. Only models with a
+single 4-D (NCHW) input are supported.
+
+```bash
+nn-lite-bench --model-path my_models/ --calib-dir sample_images/
 ```
 
 ### Emulator path
@@ -89,6 +117,10 @@ For each model, precision and device, where `<results>` is the dataset root, the
 Because the layout is the same, the `ab/` folder of `./nn-lite-results` can be
 copied into an `nn-dataset` checkout and committed.
 
+Models given with `--model-path` are written to
+`<results>/custom/{fp32,int8}/<name>/android_<device>.json`, where `<results>` is
+the `--out` folder or `./nn-lite-results`.
+
 Working files, all under `<results>/_work/`:
 
 | Path | Contents |
@@ -98,6 +130,7 @@ Working files, all under `<results>/_work/`:
 | `data/` | CIFAR-10 download used for INT8 calibration. |
 | `temp/` | Checkpoint downloads, cleared after each model. |
 | `lemur/` | LEMUR database of the installed `nn-dataset` package (only when no checkout is used). |
+| `processing_state_<device>_custom.json` | Progress ledger for `--model-path` models, separate from the dataset's. |
 | `code/` | Model and transform code taken from that database. |
 
 `<device>` is the phone's `ro.product.model` with spaces replaced by `_`; in the
@@ -204,7 +237,8 @@ A zeroed result dict with `status="failed"` and the given message, in the shape
 **`build_record(model_name, device_model, os_version, iterations, results, memory, input_size, device_analytics) -> dict`**
 Assembles one record. `results` maps `"cpu"`, `"gpu"` and `"npu"` to dicts from
 `parse_benchmark_output` or `failed_result`; `memory` is a dict of the four
-`*_kb` fields; `input_size` is the square input edge. The fastest successful
+`*_kb` fields; `input_size` is the square input edge of an RGB model, or the
+model's input shape as an `(N, C, H, W)` tuple. The fastest successful
 backend becomes `duration`/`unit`; if none succeeded, `valid` is `False` and
 those two fields are omitted. The returned dict is JSON-serialisable and its key
 order is the published schema.
@@ -237,11 +271,12 @@ normalisation.
 
 **`preprocess(images, transform, size) -> np.ndarray`**
 Applies `transform` to PIL images and returns a `float32` NCHW array, bilinearly
-resized to `size × size` if the transform's output differs.
+resized to `size × size` (or to `size = (height, width)`) if the transform's
+output differs.
 
 **`calibration_images(dataset, transform, size, count=50) -> np.ndarray`**
-The first `count` images of a `(image, label)` dataset, preprocessed for
-quantization. Used as the representative dataset for full-integer post-training
+The first `count` images (or all, if there are fewer) of an `(image, label)`
+dataset, preprocessed for quantization. Used as the representative dataset for full-integer post-training
 quantization.
 
 ### `ab.lite.progress` — resumable runs
@@ -299,8 +334,10 @@ ones, and extend the schema test in `tests/test_results.py`.
 ## 6. Running the tests
 
 The unit tests cover parsing, error extraction, the record schema, calibration
-preprocessing, the progress ledger and the choice of the model source. They need
-neither a phone nor PyTorch, TensorFlow or the NN Dataset:
+preprocessing, the progress ledger, the choice of the model source and finding
+`--model-path` models. They need neither a phone nor PyTorch, TensorFlow or the
+NN Dataset; the tests that load `--model-path` models run when PyTorch is
+installed:
 
 ```bash
 pip install pytest
