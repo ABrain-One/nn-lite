@@ -1,8 +1,8 @@
 # Model conversion: LiteRT Torch 0.8.0 and the exact versions it requires.
 # ai-edge-tensorflow and torch-xla2 are only published as dev builds on PyPI.
 litert-torch==0.8.0
-ai-edge-litert==2.0.3
-ai-edge-quantizer==0.4.0
+ai-edge-litert==2.1.2
+ai-edge-quantizer==0.4.2
 ai-edge-tensorflow==2.21.0.dev20251110
 torch-xla2==0.0.1.dev202412041639
 torchao==0.15.0

@@ -24,9 +24,12 @@ All notable changes to NN-Lite are documented in this file.
   unchanged.
 - README restructured around installation, connecting a phone and a worked example.
 - `requirements.txt` now lists only direct dependencies, pinned to stable releases where they
-  exist (torch 2.9.1, torchvision 0.24.1, ai-edge-litert 2.0.3, torchao 0.15.0); nightly
+  exist (torch 2.9.1, torchvision 0.24.1, ai-edge-litert 2.1.2, torchao 0.15.0); nightly
   packages were removed. The previous pin `ai-edge-litert-nightly==2.2.0.dev20260202` is no
   longer available on PyPI, so fresh installs had failed.
+- ai-edge-litert 2.1.2 with ai-edge-quantizer 0.4.2 instead of 2.0.3 with 0.4.0: the macOS
+  build of ai-edge-litert 2.0.3 lacks `libpywrap_litert_common.dylib`, so the converter
+  could not be imported on Apple Silicon Macs.
 
 ### Fixed
 - INT8 calibration uses 50 real CIFAR-10 training images, preprocessed with each model's own
