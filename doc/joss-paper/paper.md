@@ -12,13 +12,17 @@ tags:
 authors:
   - name: Dmitry Ignatov
     orcid: 0000-0002-6339-1200
+    affiliation: '1'
   - name: Faraz Kayani
     orcid: 0009-0000-7769-6016
     corresponding: true
+    affiliation: '1'
   - name: Sarmad Kayani
     orcid: ???
+    affiliation: '1'
   - name: Radu Timofte
     orcid: 0000-0002-1478-0402
+    affiliation: '1'
 affiliations:
   - name: Computer Vision Lab, CAIDAS & IFI, University of Würzburg, Germany
     ror: "00fbnyb24"
