@@ -32,7 +32,7 @@ bibliography: paper.bib
 
 # Summary
 
-Several processors inside a modern smartphone can run neural networks: the central processing unit (CPU), the graphics processing unit (GPU) and with increasing frequency, a neural processing unit (NPU). Performance and feasibility depend on the target device. Reliable assessment consists of direct execution on the target phone. Researchers train their models on desktop computers with PyTorch [@Paszke2019PyTorch], and manual deployment of each model to a phone becomes impractical beyond a few experiments.
+Several processors inside a modern smartphone can run neural networks: the central processing unit (CPU), the graphics processing unit (GPU), and with increasing frequency, a neural processing unit (NPU). Performance and feasibility depend on the target device. Reliable assessment consists of direct execution on the target phone. Researchers train their models on desktop computers with PyTorch [@Paszke2019PyTorch], and manual deployment of each model to a phone becomes impractical beyond a few experiments.
 
 NN-Lite automates this workflow. With an Android phone connected by USB, each PyTorch model is converted to the format supported by the Android runtimes, at full precision and at reduced precision. The converted file is transferred to the phone, where latency is measured on the CPU, GPU and NPU paths. One result is written per model, quantization setting and device. Models come from the user's own exported or checkpointed files or from the LEMUR model collection [@Goodarzi2025LEMUR], installed with NN-Lite. The tool is designed for unattended multi-day runs: it resumes after a disconnection or a restart, and failures are kept in the results instead of being silently excluded.
 
