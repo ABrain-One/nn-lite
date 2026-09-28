@@ -15,10 +15,11 @@ added. Names not listed here are internal and may change at any time.
 
 ### `nn-lite-bench`
 
-Benchmarks models from the NN Dataset (LEMUR) on the Android phone currently
-attached over USB. The models are read from an `nn-dataset` checkout if one is
-found (see below), otherwise from the `nn-dataset` package that is installed
-together with NN-Lite. Installed by `pip install nn-lite`. From a source checkout
+Benchmarks models on the Android phone currently attached over USB, either from
+local files given with `--model-path` or from the NN Dataset (LEMUR). Dataset
+models are read from an `nn-dataset` checkout if one is found (see below),
+otherwise from the `nn-dataset` package that is installed together with
+NN-Lite. Installed by `pip install nn-lite`. From a source checkout
 the equivalent command is `python -m ab.lite.torch2tflite`.
 
 ```bash
@@ -30,7 +31,7 @@ nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--models NAME [NAME ...]` | all models | Benchmark only the named models. Names are the model file stems in `ab/nn/nn/`, e.g. `AirNet`. |
+| `--models NAME [NAME ...]` | all models | Benchmark only the named models. Names are the model file stems in `ab/nn/nn/`, e.g. `AirNet`, or the file stems of the `--model-path` models. |
 | `--android-runs N` | `20` | Timed runs per backend, passed to `benchmark_model --num_runs`. |
 | `--dataset-root PATH` | see below | Location of the `nn-dataset` checkout that models are read from and records are written to. An error if `PATH` is not a checkout. |
 | `--out PATH` | the checkout, or `./nn-lite-results` | Folder the records and working files are written to. |
@@ -316,10 +317,13 @@ Consuming records without running a phone:
 
 ```python
 import json, glob
-for path in glob.glob("nn-dataset/ab/nn/stat/run/tflite/*/*/android_*.json"):
-    rec = json.load(open(path))
-    if rec["valid"]:
-        print(rec["model_name"], rec["unit"], rec["duration"] / 1e6, "ms")
+results = "nn-lite-results"          # or the nn-dataset checkout that was written to
+for pattern in (f"{results}/ab/nn/stat/run/tflite/*/*/android_*.json",
+                f"{results}/custom/*/*/android_*.json"):
+    for path in glob.glob(pattern):
+        rec = json.load(open(path))
+        if rec["valid"]:
+            print(rec["model_name"], rec["unit"], rec["duration"] / 1e6, "ms")
 ```
 
 Producing records from another measurement source: build the per-backend dicts
