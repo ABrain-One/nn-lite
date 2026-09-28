@@ -24,6 +24,18 @@ jobs:
       - name: Run unit tests (no phone, PyTorch or TensorFlow needed)
         run: python -m pytest -v tests
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pyflakes
+        run: python -m pip install --upgrade pip pyflakes==3.2.0
+      - name: Check for unused imports and variables, undefined names and similar mistakes
+        run: python -m pyflakes ab tests
+
   package:
     runs-on: ubuntu-latest
     steps:
