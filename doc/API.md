@@ -15,20 +15,23 @@ added. Names not listed here are internal and may change at any time.
 
 ### `nn-lite-bench`
 
-Benchmarks models from an NN Dataset (LEMUR) checkout on the Android phone
-currently attached over USB. Installed by `pip install nn-lite`. From a source
-checkout the equivalent command is `python -m ab.lite.torch2tflite`.
+Benchmarks models from the NN Dataset (LEMUR) on the Android phone currently
+attached over USB. The models are read from an `nn-dataset` checkout if one is
+found (see below), otherwise from the `nn-dataset` package that is installed
+together with NN-Lite. Installed by `pip install nn-lite`. From a source checkout
+the equivalent command is `python -m ab.lite.torch2tflite`.
 
 ```bash
 nn-lite-bench [--models NAME [NAME ...]] [--android-runs N]
-              [--dataset-root PATH] [--force] [--reinstall-bench]
+              [--dataset-root PATH] [--out PATH] [--force] [--reinstall-bench]
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--models NAME [NAME ...]` | all models | Benchmark only the named models. Names are the model file stems in `ab/nn/nn/`, e.g. `AirNet`. |
 | `--android-runs N` | `20` | Timed runs per backend, passed to `benchmark_model --num_runs`. |
-| `--dataset-root PATH` | see below | Location of the `nn-dataset` checkout that models are read from and records are written to. |
+| `--dataset-root PATH` | see below | Location of the `nn-dataset` checkout that models are read from and records are written to. An error if `PATH` is not a checkout. |
+| `--out PATH` | the checkout, or `./nn-lite-results` | Folder the records and working files are written to. |
 | `--force` | off | Delete the progress ledger of the connected phone and start from the beginning. Other phones are unaffected. |
 | `--reinstall-bench` | off | Push the `benchmark_model` binary to the phone again, even if it is already present. |
 
@@ -43,6 +46,12 @@ The dataset root is resolved in this order:
 2. the `NN_DATASET_ROOT` environment variable
 3. a sibling `nn-dataset` directory next to the `nn-lite` checkout
 4. `./nn-dataset` in the current working directory
+5. otherwise the installed `nn-dataset` package: the first run downloads the LEMUR
+   database (about 1.2 GB unpacked) from Hugging Face, and records are written to
+   `./nn-lite-results` in the same layout as a checkout
+
+Rules 3 and 4 apply only to directories that are checkouts (contain `ab/nn/nn/`).
+The first lines of the output say which source and results folder are used.
 
 ```bash
 export NN_DATASET_ROOT=/data/nn-dataset
@@ -56,22 +65,31 @@ python -m ab.lite.torch2tflite-all [NAME ...]
 ```
 
 Runs models inside an Android emulator through the app in `App/`. It requires
-Android Studio and the `nn-dataset` Python package (`pip install nn-lite[emulator]`),
+Android Studio and the `nn-dataset` Python package, which is installed with NN-Lite
+(the `emulator` extra, `pip install nn-lite[emulator]`, is kept for compatibility),
 and writes records with `emulator: true` in the same schema as the physical-device
-path, so results from both can be stored and filtered together.
+path, so results from both can be stored and filtered together. They are saved
+in `out/benchmark_reports/<task>_<Model>/` rather than in `ab/nn/stat/`. `out/` is
+created by `nn-dataset` in the first directory, from the current one upwards,
+that contains both an `ab` folder and a `README.md` (such as an `nn-dataset`
+checkout), or otherwise in the current directory.
 
 ---
 
 ## 2. Files written
 
-For each model, precision and device:
+For each model, precision and device, where `<results>` is the dataset root, the
+`--out` folder or `./nn-lite-results`:
 
 ```
-<dataset-root>/ab/nn/stat/run/tflite/fp32/img-classification_cifar-10_acc_<Model>/android_<device>.json
-<dataset-root>/ab/nn/stat/run/tflite/int8/img-classification_cifar-10_acc_<Model>/android_<device>.json
+<results>/ab/nn/stat/run/tflite/fp32/img-classification_cifar-10_acc_<Model>/android_<device>.json
+<results>/ab/nn/stat/run/tflite/int8/img-classification_cifar-10_acc_<Model>/android_<device>.json
 ```
 
-Working files, all under `<dataset-root>/_work/`:
+Because the layout is the same, the `ab/` folder of `./nn-lite-results` can be
+copied into an `nn-dataset` checkout and committed.
+
+Working files, all under `<results>/_work/`:
 
 | Path | Contents |
 |---|---|
@@ -79,9 +97,12 @@ Working files, all under `<dataset-root>/_work/`:
 | `benchmark_errors_<device>.log` | Full `benchmark_model` output for every failed backend invocation. |
 | `data/` | CIFAR-10 download used for INT8 calibration. |
 | `temp/` | Checkpoint downloads, cleared after each model. |
+| `lemur/` | LEMUR database of the installed `nn-dataset` package (only when no checkout is used). |
+| `code/` | Model and transform code taken from that database. |
 
-`<device>` is the phone's `ro.product.model`, with every character outside
-`[A-Za-z0-9._-]` replaced by `_`.
+`<device>` is the phone's `ro.product.model` with spaces replaced by `_`; in the
+name of the progress ledger, every character outside `[A-Za-z0-9._-]` is replaced
+by `_`.
 
 ---
 
@@ -108,8 +129,10 @@ the schema.
 | `device_analytics` | object | Core count, CPU implementer/architecture/variant/part/revision, features and SoC string. |
 | `cpu_error`, `gpu_error`, `npu_error` | string | Present only for a backend that failed; up to three extracted error lines, truncated to 500 characters. |
 
-A failed backend still has its four numeric fields, set to `0`; the presence of
-the matching `*_error` key is what marks it as failed. All latencies are
+When at least one backend succeeded, a failed backend still has its four numeric
+fields, set to `0`; the presence of the matching `*_error` key is what marks it as
+failed. When every backend failed, the record has no latency fields at all, only
+the `*_error` keys. All latencies are
 nanoseconds — `benchmark_model` reports microseconds, which NN-Lite converts on
 parse.
 
@@ -240,9 +263,11 @@ measured only on the first, and `--force` resets one device only.
 
 **`main()`** — entry point behind `nn-lite-bench`; parses the arguments above and
 runs the benchmarking loop.
-**`default_dataset_root() -> Path`** — applies rules 2–4 of the resolution order.
-**`set_dataset_root(root)`** — points all input and output paths at a checkout and
-creates the directories it needs. Call before other functions in this module.
+**`default_dataset_root() -> Path | None`** — applies rules 2–4 of the resolution
+order; `None` when no checkout is found and the installed package is used.
+**`set_dataset_root(root)`** — points all output paths at a checkout (or any
+results folder) and creates the directories it needs. Call before other functions
+in this module.
 **`run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None) -> dict`**
 — runs `benchmark_model` on the phone for one backend and returns a parsed result
 or `failed_result`, appending failures to `log_path`.
@@ -274,8 +299,8 @@ ones, and extend the schema test in `tests/test_results.py`.
 ## 6. Running the tests
 
 The unit tests cover parsing, error extraction, the record schema, calibration
-preprocessing and the progress ledger. They need neither a phone nor PyTorch or
-TensorFlow:
+preprocessing, the progress ledger and the choice of the model source. They need
+neither a phone nor PyTorch, TensorFlow or the NN Dataset:
 
 ```bash
 pip install pytest

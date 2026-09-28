@@ -12,7 +12,8 @@ include:
 - the phone model and Android version (`adb shell getprop ro.product.model` and
   `adb shell getprop ro.build.version.release`),
 - the relevant part of the console output and, for benchmark failures, of
-  `nn-dataset/_work/benchmark_errors_<device>.log`.
+  `_work/benchmark_errors_<device>.log` in the results folder (`nn-lite-results/` or your
+  nn-dataset checkout).
 
 ## Proposing changes
 

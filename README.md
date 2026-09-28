@@ -11,7 +11,7 @@ NN-Lite measures how fast PyTorch models run on real Android phones. For every m
 2. converts it to LiteRT (TensorFlow Lite) in **FP32** and full-integer **INT8** (calibrated on real
    CIFAR-10 training images, prepared with the model's own input transform),
 3. copies it to a phone over USB and times it with the official `benchmark_model` tool on the **CPU**, **GPU** and **NPU (NNAPI)**,
-4. saves one JSON record per model, precision and device back into the dataset.
+4. saves one JSON record per model, precision and device, in the same layout as the dataset.
 
 Runs are unattended and resumable: NN-Lite waits if the USB cable is unplugged, lets the phone
 cool down between models, restarts itself every 50 models, and records failures instead of
@@ -22,8 +22,9 @@ skipping them. An optional emulator path (Android Studio) is also included.
 - Linux (tested on Ubuntu) with Python 3.10 or newer
 - `adb` (Android platform tools): `sudo apt install adb`, or the [SDK platform tools](https://developer.android.com/tools/releases/platform-tools)
 - An Android phone with USB debugging enabled (see [Connect a phone](#connect-a-phone)); no root is needed
-- An internet connection (model weights are downloaded from Hugging Face; the CIFAR-10 training
-  set used for INT8 calibration is downloaded once into `nn-dataset/_work/data`)
+- An internet connection and about 2 GB of free disk space: the first run downloads the LEMUR
+  database (about 1.2 GB unpacked) and the CIFAR-10 training set used for INT8 calibration;
+  model weights are downloaded from Hugging Face as they are needed
 
 ## Installation
 
@@ -46,6 +47,10 @@ Install NN-Lite from PyPI:
 ```bash
 pip install nn-lite --extra-index-url https://download.pytorch.org/whl/cu126
 ```
+This also installs the [NN Dataset](https://github.com/ABrain-One/nn-dataset) package, from
+which NN-Lite reads the models, so nothing else needs to be cloned. Results are written to
+`nn-lite-results/` in the folder you run NN-Lite from; see
+[Contributing results to the dataset](#contributing-results-to-the-dataset) to add them to LEMUR.
 
 Or install it from source:
 ```bash
@@ -54,8 +59,17 @@ cd nn-lite
 pip install -e . --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
-NN-Lite reads model definitions from, and writes results into, a checkout of the NN Dataset.
-By default it looks for an `nn-dataset` folder next to `nn-lite`:
+If `nn-lite-bench` stops with `ModuleNotFoundError: No module named 'ab.lite'`, your `PYTHONPATH`
+includes a checkout of the NN Dataset, whose `ab` folder then hides the installed one
+(`python -c "import ab; print(ab.__path__)"` shows which is used). Remove that folder from
+`PYTHONPATH`, or run `unset PYTHONPATH`, and try again.
+
+### Working with an nn-dataset checkout
+
+If you commit results to the NN Dataset, or benchmark models that are newer than the installed
+package, NN-Lite can read the models from a git checkout of the dataset and write the results
+straight into it. When NN-Lite is installed from source, a checkout next to it is found
+automatically:
 ```bash
 cd ..
 git clone https://github.com/ABrain-One/nn-dataset.git
@@ -65,8 +79,10 @@ your-folder/
 ├── nn-lite/
 └── nn-dataset/
 ```
-To use a checkout elsewhere, pass `--dataset-root /path/to/nn-dataset` or set the
-`NN_DATASET_ROOT` environment variable.
+An `nn-dataset` checkout in the folder NN-Lite is run from is found automatically as well. A
+checkout elsewhere is chosen with `--dataset-root /path/to/nn-dataset` or the `NN_DATASET_ROOT`
+environment variable. NN-Lite prints at start-up where it reads the models from and where it
+writes the results.
 
 ## Connect a phone
 
@@ -91,10 +107,10 @@ nn-lite-bench --models AirNet
 From a source checkout, the same command is `python -m ab.lite.torch2tflite --models AirNet`.
 
 NN-Lite converts `AirNet` to FP32 and INT8, times each file on the CPU, GPU and NPU with
-20 runs per backend, and writes:
+20 runs per backend, and writes (into the nn-dataset checkout instead, if one is used):
 ```
-nn-dataset/ab/nn/stat/run/tflite/fp32/img-classification_cifar-10_acc_AirNet/android_<device>.json
-nn-dataset/ab/nn/stat/run/tflite/int8/img-classification_cifar-10_acc_AirNet/android_<device>.json
+nn-lite-results/ab/nn/stat/run/tflite/fp32/img-classification_cifar-10_acc_AirNet/android_<device>.json
+nn-lite-results/ab/nn/stat/run/tflite/int8/img-classification_cifar-10_acc_AirNet/android_<device>.json
 ```
 An abridged record (latencies are in nanoseconds; `unit` is the fastest backend):
 ```json
@@ -117,7 +133,7 @@ An abridged record (latencies are in nanoseconds; `unit` is the fastest backend)
 ```
 If a backend fails, its error message is stored in `cpu_error`, `gpu_error` or `npu_error`; if
 all three fail, the record is kept with `"valid": false`. The full output of every failure is
-appended to `nn-dataset/_work/benchmark_errors_<device>.log`.
+appended to `_work/benchmark_errors_<device>.log` in the results folder.
 
 Benchmark every model (runs for hours; safe to stop and restart at any time):
 ```bash
@@ -128,20 +144,36 @@ nn-lite-bench
 |---|---|
 | `--models NAME [NAME ...]` | Only process these models |
 | `--android-runs N` | Timed runs per backend (default 20) |
-| `--dataset-root PATH` | Location of the `nn-dataset` checkout |
+| `--dataset-root PATH` | Read models from this `nn-dataset` checkout and write results into it |
+| `--out PATH` | Write results to this folder instead (default: the checkout, or `./nn-lite-results`) |
 | `--force` | Forget the connected phone's progress and start from the beginning |
 | `--reinstall-bench` | Copy `benchmark_model` to the phone again |
 
-Progress is stored per phone model in `nn-dataset/_work/processing_state_<model>.json`; models
+Progress is stored per phone model in `_work/processing_state_<model>.json` of the results folder; models
 listed there as processed or failed are skipped when that phone model is benchmarked again,
 while a phone of another model starts from the beginning. `--force` resets the progress of the
 connected phone model only. Like the result files, progress is identified by the phone model, so
 a second phone of the same model continues where the first one left off.
 
+## Contributing results to the dataset
+
+The results folder has the same layout as the NN Dataset, so adding your measurements to LEMUR
+takes three steps:
+```bash
+git clone https://github.com/ABrain-One/nn-dataset.git
+cp -r nn-lite-results/ab nn-dataset/
+cd nn-dataset && git add ab/nn/stat/run/tflite && git commit -m "Add LiteRT benchmarks for <device>"
+```
+Then open a pull request on the [NN Dataset](https://github.com/ABrain-One/nn-dataset) repository.
+The `_work` folder (downloads, progress and logs) is not part of the dataset and is not copied.
+From then on, NN-Lite run from the same folder finds this checkout and writes new results
+straight into it.
+
 ## Optional: emulator path (Android Studio)
 
 The earlier version of NN-Lite runs models inside an Android emulator through the Android app in
-`App/`. It needs the NN Dataset Python package:
+`App/`. It uses the NN Dataset Python package installed with NN-Lite; to use its latest
+development version instead:
 ```bash
 rm -rf db
 pip install --no-cache-dir git+https://github.com/ABrain-One/nn-dataset --upgrade --force --extra-index-url https://download.pytorch.org/whl/cu126
@@ -182,8 +214,8 @@ python -m ab.lite.torch2tflite-all AirNet ga-196 ga-197 ga-198
 
 ## Running the tests
 
-The unit tests cover output parsing, error extraction and the result schema. They need neither a
-phone nor PyTorch or TensorFlow:
+The unit tests cover output parsing, error extraction, the result schema and the choice of the
+model source. They need neither a phone nor PyTorch, TensorFlow or the NN Dataset:
 ```bash
 pip install pytest
 python -m pytest tests
