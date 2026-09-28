@@ -91,6 +91,22 @@ def adb_shell(cmd):
             continue
         return res.stdout.strip()
 
+def push_model(local_path, dev_path):
+    """Copy a model to the phone, replacing any earlier file there.
+
+    Every model is copied to the same path, so a failed copy must not leave the previous
+    model to be benchmarked in its place: the old file is deleted first, and an error is
+    raised if the copy still fails after reconnecting and retrying.
+    """
+    adb_shell(f"rm -f {dev_path}")
+    for attempt in range(3):
+        res = subprocess.run(["adb", "push", str(local_path), dev_path], capture_output=True, text=True)
+        if res.returncode == 0:
+            return
+        if "device not found" in res.stderr or "lost" in res.stderr or "no devices" in res.stderr:
+            wait_for_device()
+    raise RuntimeError(f"could not copy {Path(local_path).name} to the phone: {res.stderr.strip()[:300]}")
+
 # --- BENCHMARK BINARY SETUP ---
 def setup_benchmark_binary(force=False, checkout=None):
     """Push benchmark_model to device if not already present and executable.
@@ -402,7 +418,7 @@ def main():
                 # A fixed name on the phone: model names come from file names, which may
                 # contain spaces or shell characters, and the path is used in shell commands.
                 dev_p = f"/data/local/tmp/nn_lite_{mode}.tflite"
-                subprocess.run(["adb", "push", str(tflite_path), dev_p], capture_output=True)
+                push_model(tflite_path, dev_p)
                 
                 c = run_bench(dev_p, "cpu", args.android_runs, log_path=error_log, model_name=name, mode=mode)
                 g = run_bench(dev_p, "gpu", args.android_runs, log_path=error_log, model_name=name, mode=mode)
