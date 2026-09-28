@@ -69,7 +69,8 @@ With `--model-path`, the NN Dataset is not used at all. Each path is a file or a
 folder of files:
 
 - `<name>.pt2`: a model saved with `torch.export.save`. No Python code is needed;
-  the input shape is read from the file.
+  the input shape is read from the file. The model should be exported in
+  evaluation mode, as the exported graph keeps the mode it was exported in.
 - `<name>.py` with `<name>.pt` or `<name>.pth` next to it: the model's code and
   either its `state_dict` (also inside a checkpoint dictionary under `state_dict`,
   `model_state_dict` or `model`) or the whole model saved with `torch.save(model)`.

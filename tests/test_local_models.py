@@ -166,5 +166,6 @@ def test_load_exported_program(tmp_path):
     torch.export.save(torch.export.export(original, (x,)), tmp_path / "exported.pt2")
     loaded, shape, transform = load_local_model(LocalModel("exported", exported=tmp_path / "exported.pt2"))
     assert shape == (1, 3, 48, 40) and transform is None
+    assert not any(m.training for m in loaded.modules())
     with torch.no_grad():
         assert torch.allclose(loaded(x), original(x))

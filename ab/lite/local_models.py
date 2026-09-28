@@ -151,7 +151,13 @@ def load_local_model(model, input_size=224):
         inputs = program.example_inputs[0]
         if len(inputs) != 1 or inputs[0].dim() != 4:
             raise ValueError(f"{model.exported}: only models with one 4-D (NCHW) image input are supported")
-        return program.module(), tuple(inputs[0].shape), None
+        network = program.module()
+        # The graph was fixed when the model was exported. Exported modules do not support
+        # .eval(), so only the flags are cleared, which the converter would otherwise report
+        # as "converted in training mode".
+        for m in network.modules():
+            m.training = False
+        return network, tuple(inputs[0].shape), None
 
     module = _load_code(model.code)
     try:

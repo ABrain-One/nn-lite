@@ -166,7 +166,8 @@ nn-lite-bench --model-path my_models/ --calib-dir sample_images/
 Each model is either
 
 - a **`.pt2` file** saved with [`torch.export`](https://docs.pytorch.org/docs/stable/export.html):
-  it needs no Python code, and its input shape is stored in the file:
+  it needs no Python code, and its input shape is stored in the file. Export the model in
+  evaluation mode (`model.eval()`), as the exported graph keeps the mode it was exported in:
   ```python
   torch.export.save(torch.export.export(model.eval(), (torch.randn(1, 3, 224, 224),)), "mymodel.pt2")
   ```
