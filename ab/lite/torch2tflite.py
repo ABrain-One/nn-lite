@@ -370,9 +370,13 @@ def main():
                 print(f"   [PROCESS] INT8 Conversion...")
                 try:
                     calib = calibration_images(calib_set, model_tf, shape[2:])
+                    # Feed batches of the model's batch size (1 for LEMUR models; a .pt2 file
+                    # may have been exported with more), repeating images if there are too few.
+                    batch = shape[0]
+                    calib = np.resize(calib, (max(len(calib), batch),) + calib.shape[1:])
                     def rep():
-                        for j in range(len(calib)):
-                            yield [calib[j:j + 1]]
+                        for j in range(0, len(calib) - batch + 1, batch):
+                            yield [calib[j:j + batch]]
                 
                     litert_torch.convert(
                         model,
@@ -395,7 +399,9 @@ def main():
                 models_to_bench.append(("int8", int8_tflite, int8_dir))
 
             for mode, tflite_path, save_dir in models_to_bench:
-                dev_p = f"/data/local/tmp/{name}_{mode}.tflite"
+                # A fixed name on the phone: model names come from file names, which may
+                # contain spaces or shell characters, and the path is used in shell commands.
+                dev_p = f"/data/local/tmp/nn_lite_{mode}.tflite"
                 subprocess.run(["adb", "push", str(tflite_path), dev_p], capture_output=True)
                 
                 c = run_bench(dev_p, "cpu", args.android_runs, log_path=error_log, model_name=name, mode=mode)

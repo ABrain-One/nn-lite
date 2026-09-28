@@ -169,3 +169,21 @@ def test_load_exported_program(tmp_path):
     assert not any(m.training for m in loaded.modules())
     with torch.no_grad():
         assert torch.allclose(loaded(x), original(x))
+
+
+def test_whole_models_from_different_scripts_with_the_same_class_name(tmp_path):
+    """Scripts often all call their class Net; each model must load with its own class."""
+    torch = pytest.importorskip("torch")
+    from ab.lite.local_models import load_local_model
+
+    for name, width in (("first", 4), ("second", 6)):
+        code = MODEL.replace("nn.Linear(8, num_classes)", f"nn.Linear(8, {width})")
+        (tmp_path / f"{name}.py").write_text(code)
+        script = tmp_path / f"save_{name}.py"
+        script.write_text(code + f"\nimport torch\ntorch.save(Net(), '{name}.pt')\n")
+        subprocess.run([sys.executable, str(script)], cwd=tmp_path, check=True)
+        script.unlink()
+    models, _ = find_models([tmp_path])
+    for name, width in (("first", 4), ("second", 6)):
+        loaded, shape, _ = load_local_model(models[name], 32)
+        assert loaded(torch.randn(*shape)).shape == (1, width)
