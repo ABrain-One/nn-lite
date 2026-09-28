@@ -45,7 +45,7 @@ python -m pip install --upgrade pip
 
 Install NN-Lite from PyPI:
 ```bash
-pip install nn-lite --extra-index-url https://download.pytorch.org/whl/cu126
+pip install nn-lite
 ```
 This also installs the [NN Dataset](https://github.com/ABrain-One/nn-dataset) package, from
 which NN-Lite reads the models, so nothing else needs to be cloned. Results are written to
@@ -56,7 +56,7 @@ Or install it from source:
 ```bash
 git clone https://github.com/ABrain-One/nn-lite.git
 cd nn-lite
-pip install -e . --extra-index-url https://download.pytorch.org/whl/cu126
+pip install -e .
 ```
 
 If `nn-lite-bench` stops with `ModuleNotFoundError: No module named 'ab.lite'`, your `PYTHONPATH`
@@ -232,7 +232,8 @@ The earlier version of NN-Lite runs models inside an Android emulator through th
 development version instead:
 ```bash
 rm -rf db
-pip install --no-cache-dir git+https://github.com/ABrain-One/nn-dataset --upgrade --force --extra-index-url https://download.pytorch.org/whl/cu126
+pip uninstall -y nn-dataset
+pip install --no-cache-dir git+https://github.com/ABrain-One/nn-dataset
 ```
 
 Install Android Studio 'Android Studio Narwhal 3 Feature Drop | 2025.1.3' (outside of the virtual environment) with the ready-made script (Linux):
