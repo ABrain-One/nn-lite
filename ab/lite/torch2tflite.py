@@ -8,7 +8,8 @@ connected phone model (_work/processing_state_<model>.json). Phones are
 identified by their model name, as in the result files.
 
 With several phones connected, choose one with --serial; each phone is benchmarked
-by its own run of this script.
+by its own run of this script. Runs for phones of different models can share a
+results folder (see ab/lite/locks.py).
 
 Use this version for normal full-coverage runs on a new device.
 
@@ -52,7 +53,9 @@ def set_results_root(root):
     int8_dir = stat_base / "int8"
     fp32_dir = stat_base / "fp32"
     work_dir = results_root / "_work"
-    data_root, temp_dl_dir = work_dir / "data", work_dir / "temp"
+    # Each phone has its own temporary folder, as it is emptied after every model.
+    data_root = work_dir / "data"
+    temp_dl_dir = work_dir / (f"temp_{adb.folder_name(adb.serial)}" if adb.serial else "temp")
     for p in [data_root, temp_dl_dir]:
         p.mkdir(parents=True, exist_ok=True)
 
@@ -64,6 +67,7 @@ try:
     from ab.lite.sources import find_checkout, CheckoutSource, PackageSource
     from ab.lite.local_models import find_models, load_local_model, calibration_set, default_transform
     from ab.lite import adb
+    from ab.lite.locks import downloading, claim
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
@@ -72,6 +76,7 @@ except ImportError:  # executed as a plain script, e.g. after a session restart
     from sources import find_checkout, CheckoutSource, PackageSource
     from local_models import find_models, load_local_model, calibration_set, default_transform
     import adb
+    from locks import downloading, claim
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -287,11 +292,14 @@ def main():
             print("[SETUP] Models are read from the installed nn-dataset package")
             if not (work_dir / "lemur" / "db" / "ab.nn.db").exists():
                 print("[SETUP] Downloading the LEMUR database (about 1.2 GB unpacked); this happens only once")
-            source = PackageSource.open(work_dir / "lemur", work_dir / "code")
+            with downloading(work_dir):
+                source = PackageSource.open(work_dir / "lemur", work_dir / "code")
     print(f"[SETUP] Results are written to {results_root}")
 
     if not local:
-        with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
+        with downloading(work_dir):
+            models_json = hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))
+        with open(models_json) as f: model_db = json.load(f)
 
     adb.run("shell", "svc power stayon true")
     setup_benchmark_binary(force=args.reinstall_bench, checkout=checkout)
@@ -305,6 +313,10 @@ def main():
 
     # Progress is kept per phone, so a new phone starts from the beginning.
     state_file = progress_file(work_dir, device_clean + ("_custom" if local else ""))
+    try:
+        claim(state_file, device_model)
+    except RuntimeError as e:
+        sys.exit(f"[ERROR] {e}")
     if args.force and state_file.exists(): state_file.unlink()
     state = load_progress(state_file)
     print(f"[LOG] Progress for this phone: {state_file}")
@@ -313,7 +325,8 @@ def main():
         names = sorted(local)
     else:
         # INT8 calibration uses real CIFAR-10 training images, preprocessed with each model's own transform.
-        calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
+        with downloading(work_dir):
+            calib_set = torchvision.datasets.CIFAR10(root=str(data_root), train=True, download=True)
         hf_files = list_repo_files(SOURCE_REPO)
         names = sorted(n for n in source.names() if f"{n}.pth" in hf_files)
     if args.models:
