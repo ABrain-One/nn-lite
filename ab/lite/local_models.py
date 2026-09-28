@@ -25,7 +25,8 @@ MODEL_SUFFIXES = (".pt2", ".py") + WEIGHT_SUFFIXES
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 IMAGENET_NORM = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
-_loaded = set()  # names of the model modules registered in sys.modules by _load_code
+_loaded = set()      # names of the model modules registered in sys.modules by _load_code
+_main_bound = set()  # names of the model classes set in __main__ by _load_code
 
 
 @dataclass(frozen=True)
@@ -95,7 +96,8 @@ def _load_code(path):
     """Import the model's .py file.
 
     Its model classes are also made available in ``__main__``, where ``torch.save`` records
-    them when the model was saved from a script that was run directly.
+    them when the model was saved from a script that was run directly. They replace the
+    classes of a previously loaded model, as scripts often use the same class names.
     """
     import torch
 
@@ -111,8 +113,10 @@ def _load_code(path):
     spec.loader.exec_module(module)
     main = sys.modules["__main__"]
     for name, obj in vars(module).items():
-        if isinstance(obj, type) and issubclass(obj, torch.nn.Module) and not hasattr(main, name):
+        if (isinstance(obj, type) and issubclass(obj, torch.nn.Module)
+                and (not hasattr(main, name) or name in _main_bound)):
             setattr(main, name, obj)
+            _main_bound.add(name)
     return module
 
 
