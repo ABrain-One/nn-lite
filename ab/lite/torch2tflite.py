@@ -7,6 +7,9 @@ except those already listed as processed or failed in the progress file of the
 connected phone model (_work/processing_state_<model>.json). Phones are
 identified by their model name, as in the result files.
 
+With several phones connected, choose one with --serial; each phone is benchmarked
+by its own run of this script.
+
 Use this version for normal full-coverage runs on a new device.
 
 Models are read from an nn-dataset checkout if one is given with --dataset-root
@@ -18,7 +21,7 @@ from the installed nn-dataset package and results are written to
 With --model-path, models are read from local files instead (see
 ab/lite/local_models.py) and the NN Dataset is not used at all.
 """
-import sys, os, argparse, json, re, subprocess, importlib.util, shutil, time, gc
+import sys, os, argparse, json, re, importlib.util, shutil, time, gc
 from pathlib import Path
 
 # --- CONFIGURATION ---
@@ -60,6 +63,7 @@ try:
     from ab.lite.progress import progress_file, load_progress, save_progress
     from ab.lite.sources import find_checkout, CheckoutSource, PackageSource
     from ab.lite.local_models import find_models, load_local_model, calibration_set, default_transform
+    from ab.lite import adb
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
@@ -67,6 +71,7 @@ except ImportError:  # executed as a plain script, e.g. after a session restart
     from progress import progress_file, load_progress, save_progress
     from sources import find_checkout, CheckoutSource, PackageSource
     from local_models import find_models, load_local_model, calibration_set, default_transform
+    import adb
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -75,18 +80,18 @@ from huggingface_hub import hf_hub_download, list_repo_files
 def wait_for_device():
     print("\n[!] USB DISCONNECTED or DEVICE LOST. Waiting for reconnection...")
     while True:
-        res = subprocess.run(["adb", "get-state"], capture_output=True, text=True)
+        res = adb.run("get-state")
         if "device" in res.stdout:
             print("[OK] Device detected. Re-initializing...")
             time.sleep(5)
-            subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
+            adb.run("shell", "svc power stayon true")
             return
         time.sleep(10)
 
 def adb_shell(cmd): 
     while True:
-        res = subprocess.run(["adb", "shell", cmd], capture_output=True, text=True)
-        if res.returncode != 0 and ("device not found" in res.stderr or "lost" in res.stderr):
+        res = adb.run("shell", cmd)
+        if res.returncode != 0 and adb.disconnected(res.stderr):
             wait_for_device()
             continue
         return res.stdout.strip()
@@ -100,10 +105,10 @@ def push_model(local_path, dev_path):
     """
     adb_shell(f"rm -f {dev_path}")
     for attempt in range(3):
-        res = subprocess.run(["adb", "push", str(local_path), dev_path], capture_output=True, text=True)
+        res = adb.run("push", str(local_path), dev_path)
         if res.returncode == 0:
             return
-        if "device not found" in res.stderr or "lost" in res.stderr or "no devices" in res.stderr:
+        if adb.disconnected(res.stderr):
             wait_for_device()
     raise RuntimeError(f"could not copy {Path(local_path).name} to the phone: {res.stderr.strip()[:300]}")
 
@@ -139,14 +144,11 @@ def setup_benchmark_binary(force=False, checkout=None):
     print(f"[SETUP] Pushing {local_binary} to device...")
     pushed = False
     for attempt in range(3):
-        res = subprocess.run(
-            ["adb", "push", str(local_binary), "/data/local/tmp/"],
-            capture_output=True, text=True,
-        )
+        res = adb.run("push", str(local_binary), "/data/local/tmp/")
         if res.returncode == 0:
             pushed = True
             break
-        if "device not found" in res.stderr or "lost" in res.stderr:
+        if adb.disconnected(res.stderr):
             wait_for_device()
             continue
         raise RuntimeError(f"adb push failed: {res.stderr}")
@@ -245,7 +247,22 @@ def main():
     ap.add_argument("--calib-dir", default=None,
                     help="Folder of sample images for INT8 calibration of --model-path models "
                          "(without it, only FP32 is benchmarked)")
+    ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"),
+                    help="Serial number of the phone to benchmark, as listed by 'adb devices' "
+                         "(default: $ANDROID_SERIAL, or the only phone connected)")
     args = ap.parse_args()
+
+    # Choose the phone first, so a wrong choice is reported before any download.
+    devices = adb.connected_devices()
+    try:
+        adb.serial = adb.choose_device(args.serial, devices)
+    except ValueError as e:
+        ap.error(str(e))
+    if devices.get(adb.serial) != "device":
+        print(f"[!] Phone {adb.serial} is not connected or not ready; 'adb devices' lists: "
+              f"{', '.join(f'{s} ({state})' for s, state in devices.items()) or 'no phones'}")
+        wait_for_device()
+    print(f"[SETUP] Phone: {adb.serial}")
     local = checkout = None
     if args.model_path:
         try:
@@ -276,8 +293,7 @@ def main():
     if not local:
         with open(hf_hub_download(SOURCE_REPO, "all_models.json", local_dir=str(work_dir))) as f: model_db = json.load(f)
 
-    subprocess.run(["adb", "start-server"], capture_output=True)
-    subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
+    adb.run("shell", "svc power stayon true")
     setup_benchmark_binary(force=args.reinstall_bench, checkout=checkout)
 
     device_model = adb_getprop("ro.product.model")
@@ -318,7 +334,8 @@ def main():
         if session_counter >= RESTART_EVERY_N_MODELS:
             print("\n[THERMAL] Resetting Session...")
             time.sleep(COOL_DOWN_SESSION)
-            restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root)]
+            restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root),
+                            "--serial", adb.serial]
             if checkout: restart_args += ["--dataset-root", str(checkout)]
             if local:
                 restart_args += ["--model-path", *args.model_path, "--input-size", str(args.input_size)]
