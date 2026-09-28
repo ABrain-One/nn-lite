@@ -93,7 +93,8 @@ writes the results.
    ```bash
    adb devices
    ```
-   It should be listed with the state `device` (not `unauthorized`). Connect only one phone at a time.
+   It should be listed with the state `device` (not `unauthorized`). With several phones
+   connected, see [Several phones](#several-phones).
 
 Keep the phone charging during long runs. NN-Lite keeps the screen awake and copies the
 `benchmark_model` binary to `/data/local/tmp` on the phone automatically.
@@ -147,6 +148,7 @@ nn-lite-bench
 | `--dataset-root PATH` | Read models from this `nn-dataset` checkout and write results into it |
 | `--out PATH` | Write results to this folder instead (default: the checkout, or `./nn-lite-results`) |
 | `--model-path PATH [PATH ...]` | Benchmark your own models instead (see [Your own models](#your-own-models)) |
+| `--serial SERIAL` | Benchmark this phone, as listed by `adb devices` (needed when several are connected) |
 | `--force` | Forget the connected phone's progress and start from the beginning |
 | `--reinstall-bench` | Copy `benchmark_model` to the phone again |
 
@@ -155,6 +157,28 @@ listed there as processed or failed are skipped when that phone model is benchma
 while a phone of another model starts from the beginning. `--force` resets the progress of the
 connected phone model only. Like the result files, progress is identified by the phone model, so
 a second phone of the same model continues where the first one left off.
+
+### Several phones
+
+Several phones can be benchmarked at the same time from one computer, each by its own run
+of NN-Lite. Choose the phone of each run with `--serial` and the serial number that
+`adb devices` lists for it:
+```bash
+adb devices
+# List of devices attached
+# R58M12ABCDE    device
+# 2A281FDH300    device
+nn-lite-bench --serial R58M12ABCDE     # in one terminal
+nn-lite-bench --serial 2A281FDH300     # in another terminal
+```
+Without `--serial` (or the `ANDROID_SERIAL` environment variable), NN-Lite uses the only
+phone connected, and stops with the list of phones if there are several. A run only ever
+talks to its own phone, even if other phones are connected or reconnected during the run.
+
+The runs can write into the same results folder: the downloads they share are made once,
+and each phone has its own temporary folder. Phones of the same model share one progress
+file and one result file per model, so they are benchmarked one after the other; a second
+run for a phone model that is already being benchmarked stops with an error.
 
 ## Your own models
 
@@ -246,10 +270,11 @@ python -m ab.lite.torch2tflite-all AirNet ga-196 ga-197 ga-198
 
 ## Running the tests
 
-The unit tests cover output parsing, error extraction, the result schema and the choice of the
-model source. They need neither a phone nor PyTorch, TensorFlow or the NN Dataset:
+The unit tests cover output parsing, error extraction, the result schema, the choice of the
+model source and of the phone, and the locks between runs. They need neither a phone nor
+PyTorch, TensorFlow or the NN Dataset:
 ```bash
-pip install pytest
+pip install pytest filelock
 python -m pytest tests
 ```
 

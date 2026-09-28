@@ -20,6 +20,12 @@ All notable changes to NN-Lite are documented in this file.
   (`ab/lite/local_models.py`): `.pt2` files saved with `torch.export`, or a `.py` file with a
   `.pt`/`.pth` file of the same name holding the weights or the whole model. INT8 is calibrated
   with images given with `--calib-dir`; results are written to `nn-lite-results/custom/`.
+- `--serial` option (default `$ANDROID_SERIAL`) to choose the phone when several are
+  connected, so several phones can be benchmarked at the same time, one run per phone
+  (`ab/lite/adb.py`). Every adb command is sent to the chosen phone with `adb -s`; without
+  `--serial`, a run with several phones connected stops and lists them. Runs for phones of
+  different models can share a results folder: each phone has its own temporary folder, and
+  the shared downloads and each phone model's progress ledger are locked (`ab/lite/locks.py`).
 - JOSS paper draft in `doc/joss-paper/`.
 
 ### Changed

@@ -15,7 +15,7 @@ added. Names not listed here are internal and may change at any time.
 
 ### `nn-lite-bench`
 
-Benchmarks models on the Android phone currently attached over USB, either from
+Benchmarks models on an Android phone attached over USB, either from
 local files given with `--model-path` or from the NN Dataset (LEMUR). Dataset
 models are read from an `nn-dataset` checkout if one is found (see below),
 otherwise from the `nn-dataset` package that is installed together with
@@ -23,10 +23,10 @@ NN-Lite. Installed by `pip install nn-lite`. From a source checkout
 the equivalent command is `python -m ab.lite.torch2tflite`.
 
 ```bash
-nn-lite-bench [--models NAME [NAME ...]] [--android-runs N]
+nn-lite-bench [--models NAME [NAME ...]] [--android-runs N] [--serial SERIAL]
               [--dataset-root PATH] [--out PATH] [--force] [--reinstall-bench]
 nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
-              [--models NAME [NAME ...]] [--android-runs N] [--out PATH] [--force]
+              [--models NAME [NAME ...]] [--android-runs N] [--serial SERIAL] [--out PATH] [--force]
 ```
 
 | Option | Default | Meaning |
@@ -35,14 +35,24 @@ nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
 | `--android-runs N` | `20` | Timed runs per backend, passed to `benchmark_model --num_runs`. |
 | `--dataset-root PATH` | see below | Location of the `nn-dataset` checkout that models are read from and records are written to. An error if `PATH` is not a checkout. |
 | `--out PATH` | the checkout, or `./nn-lite-results` | Folder the records and working files are written to. |
+| `--serial SERIAL` | `$ANDROID_SERIAL`, or the only phone connected | The phone to benchmark, by the serial number `adb devices` lists for it. Needed when several phones are connected. |
 | `--force` | off | Delete the progress ledger of the connected phone and start from the beginning. Other phones are unaffected. |
 | `--reinstall-bench` | off | Push the `benchmark_model` binary to the phone again, even if it is already present. |
 | `--model-path PATH [PATH ...]` | off | Benchmark models from local files or folders instead of the NN Dataset (see below). `--model_path` is accepted too. |
 | `--input-size N` | `224` | Square input size for `--model-path` models given as `.py` and `.pt`/`.pth` files. |
 | `--calib-dir DIR` | none | Images for INT8 calibration of `--model-path` models; without it only FP32 is benchmarked. |
 
-Exactly one phone must be attached and authorised (`adb devices` must list it in
-state `device`).
+The phone must be authorised (`adb devices` must list it in state `device`).
+Without `--serial`, exactly one phone may be in that state; with several, the run
+stops and lists their serial numbers. Every adb command of a run is sent to its
+phone with `adb -s <serial>`. A `--serial` that `adb devices` does not list is
+waited for, as after a USB disconnection.
+
+Several phones are benchmarked at the same time by starting one run per phone,
+each with its own `--serial`. The runs may use the same results folder, except
+that two phones of the same model (the same `ro.product.model`) cannot be
+benchmarked at the same time: they share a progress ledger and result files, so
+the second run stops with an error.
 
 ### Locating the dataset
 
@@ -130,7 +140,8 @@ Working files, all under `<results>/_work/`:
 | `processing_state_<device>.json` | Progress ledger for one phone: `{"processed": [...], "failed": [...]}`. |
 | `benchmark_errors_<device>.log` | Full `benchmark_model` output for every failed backend invocation. |
 | `data/` | CIFAR-10 download used for INT8 calibration. |
-| `temp/` | Checkpoint downloads, cleared after each model. |
+| `temp_<serial>/` | Checkpoint downloads and converted models of one phone, cleared after each model. |
+| `downloads.lock`, `processing_state_<device>.json.lock` | Locks between runs for different phones (see `ab.lite.locks`). |
 | `lemur/` | LEMUR database of the installed `nn-dataset` package (only when no checkout is used). |
 | `processing_state_<device>_custom.json` | Progress ledger for `--model-path` models, separate from the dataset's. |
 | `code/` | Model and transform code taken from that database. |
@@ -296,6 +307,29 @@ if it does not exist.
 Ledgers are per phone, so benchmarking a second device does not skip models
 measured only on the first, and `--force` resets one device only.
 
+### `ab.lite.adb` — the phone in use
+
+```python
+from ab.lite import adb
+```
+
+**`adb.serial`** — serial number of the phone every command is sent to (`None` for
+adb's default phone).
+**`command(*args) -> list`** / **`run(*args) -> CompletedProcess`** — the adb
+command line for `args`, with `-s <serial>`, and running it.
+**`list_devices(output) -> dict`** — `{serial: state}` from the output of
+`adb devices`; **`connected_devices()`** runs it.
+**`choose_device(requested, devices) -> str`** — the serial to use: `requested`
+if given, otherwise the only phone in state `device`; raises `ValueError`
+otherwise.
+
+### `ab.lite.locks` — several phones, one results folder
+
+**`downloading(work_dir)`** — context manager held while downloading the files
+the runs share; waits while another run holds it.
+**`claim(progress_path, device_model)`** — locks a phone model's progress ledger
+until the run ends; raises `RuntimeError` if another run holds it.
+
 ### `ab.lite.torch2tflite` — the pipeline
 
 **`main()`** — entry point behind `nn-lite-bench`; parses the arguments above and
@@ -339,12 +373,12 @@ ones, and extend the schema test in `tests/test_results.py`.
 ## 6. Running the tests
 
 The unit tests cover parsing, error extraction, the record schema, calibration
-preprocessing, the progress ledger, the choice of the model source and finding
-`--model-path` models. They need neither a phone nor PyTorch, TensorFlow or the
-NN Dataset; the tests that load `--model-path` models run when PyTorch is
-installed:
+preprocessing, the progress ledger, the choice of the model source, finding
+`--model-path` models, choosing the phone and the locks between runs. They need
+neither a phone nor PyTorch, TensorFlow or the NN Dataset; the tests that load
+`--model-path` models run when PyTorch is installed:
 
 ```bash
-pip install pytest
+pip install pytest filelock
 python -m pytest tests
 ```
