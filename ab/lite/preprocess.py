@@ -34,17 +34,21 @@ def input_size(transform, probe=None):
 
 
 def preprocess(images, transform, size):
-    """Apply ``transform`` to PIL images and return a float32 NCHW array of the given size."""
+    """Apply ``transform`` to PIL images and return a float32 NCHW array of the given size.
+
+    ``size`` is the side of a square input, or its (height, width).
+    """
     import numpy as np
     import torch
     import torch.nn.functional as F
 
+    size = (size, size) if isinstance(size, int) else tuple(size)
     batch = torch.stack([transform(img) for img in images])
-    if batch.shape[-2:] != (size, size):
-        batch = F.interpolate(batch, size=(size, size), mode="bilinear", align_corners=False)
+    if tuple(batch.shape[-2:]) != size:
+        batch = F.interpolate(batch, size=size, mode="bilinear", align_corners=False)
     return batch.numpy().astype(np.float32)
 
 
 def calibration_images(dataset, transform, size, count=50):
     """First ``count`` images of ``dataset`` (PIL image, label pairs), preprocessed for calibration."""
-    return preprocess([dataset[i][0] for i in range(count)], transform, size)
+    return preprocess([dataset[i][0] for i in range(min(count, len(dataset)))], transform, size)

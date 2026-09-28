@@ -134,3 +134,9 @@ def test_record_field_order_is_stable():
         "npu_error",
     ]
     json.dumps(rec)  # must be serialisable
+
+
+def test_record_takes_the_input_shape_of_any_model():
+    rec = build_record("Custom", "Dev", "14", 20, {"cpu": ok(3), "gpu": ok(2), "npu": ok(4)},
+                       MEMORY, (1, 1, 48, 40), ANALYTICS)
+    assert (rec["in_dim_0"], rec["in_dim_1"], rec["in_dim_2"], rec["in_dim_3"]) == (1, 48, 40, 1)

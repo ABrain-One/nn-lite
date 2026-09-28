@@ -36,3 +36,13 @@ def test_input_size_comes_from_the_transform_output():
     # e.g. CenterCrop(32) then Resize((64, 64)): the source mentions 32 first, but the model sees 64x64
     assert input_size(lambda img: _Out(64), probe=object()) == 64
     assert input_size(lambda img: _Out(128), probe=object()) == 128
+
+
+def test_calibration_with_fewer_images_and_non_square_input():
+    np = pytest.importorskip("numpy")
+    torch = pytest.importorskip("torch")
+    from ab.lite.preprocess import calibration_images
+
+    dataset = [(i, 0) for i in range(5)]
+    calib = calibration_images(dataset, lambda i: torch.full((3, 16, 16), float(i)), size=(48, 40))
+    assert calib.shape == (5, 3, 48, 40)

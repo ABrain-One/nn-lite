@@ -62,9 +62,13 @@ def build_record(model_name, device_model, os_version, iterations, results,
     """Build the JSON record for one model, precision and device.
 
     ``results`` maps "cpu"/"gpu"/"npu" to the dicts returned by
-    ``parse_benchmark_output`` or ``failed_result``. The field order is part of
-    the published schema and must not change.
+    ``parse_benchmark_output`` or ``failed_result``. ``input_size`` is the side of
+    a square RGB input, or the model's NCHW input shape. The field order is part
+    of the published schema and must not change.
     """
+    if isinstance(input_size, int):
+        input_size = (1, 3, input_size, input_size)
+    batch, channels, height, width = input_size
     c, g, n = (results[b] for b in BACKENDS)
     opts = {}
     if c["status"] == "ok": opts["CPU"] = c["avg"]
@@ -89,7 +93,7 @@ def build_record(model_name, device_model, os_version, iterations, results,
             "npu_duration": int(n["avg"]), "npu_min_duration": int(n["min"]), "npu_max_duration": int(n["max"]), "npu_std_dev": n["std"],
         })
     record.update(memory)
-    record.update({"in_dim_0": 1, "in_dim_1": input_size, "in_dim_2": input_size, "in_dim_3": 3,
+    record.update({"in_dim_0": batch, "in_dim_1": height, "in_dim_2": width, "in_dim_3": channels,
                    "device_analytics": device_analytics})
     for b, r in zip(BACKENDS, (c, g, n)):
         if r["status"] == "failed":
