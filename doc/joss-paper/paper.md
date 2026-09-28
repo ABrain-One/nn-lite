@@ -18,7 +18,7 @@ authors:
     corresponding: true
     affiliation: '1'
   - name: Sarmad Kayani
-    orcid: ???
+    orcid: 0009-0003-4156-4291
     affiliation: '1'
   - name: Radu Timofte
     orcid: 0000-0002-1478-0402
