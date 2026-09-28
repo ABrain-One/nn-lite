@@ -69,8 +69,10 @@ Android Studio and the `nn-dataset` Python package, which is installed with NN-L
 (the `emulator` extra, `pip install nn-lite[emulator]`, is kept for compatibility),
 and writes records with `emulator: true` in the same schema as the physical-device
 path, so results from both can be stored and filtered together. They are saved
-under the `nn-dataset` package's `out/benchmark_reports/<task>_<Model>/` folder
-rather than in `ab/nn/stat/`.
+in `out/benchmark_reports/<task>_<Model>/` rather than in `ab/nn/stat/`. `out/` is
+created by `nn-dataset` in the first directory, from the current one upwards,
+that contains both an `ab` folder and a `README.md` (such as an `nn-dataset`
+checkout), or otherwise in the current directory.
 
 ---
 

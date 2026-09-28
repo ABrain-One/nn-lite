@@ -87,8 +87,12 @@ def adb_shell(cmd):
         return res.stdout.strip()
 
 # --- BENCHMARK BINARY SETUP ---
-def setup_benchmark_binary(force=False):
-    """Push benchmark_model to device if not already present and executable."""
+def setup_benchmark_binary(force=False, checkout=None):
+    """Push benchmark_model to device if not already present and executable.
+
+    The binary is looked for next to this script, in the nn-lite checkout, in the
+    results folder, in the nn-dataset ``checkout`` if one is used, and in the
+    current folder."""
     if not force:
         check = adb_shell("ls /data/local/tmp/benchmark_model 2>/dev/null && echo OK")
         if "OK" in check:
@@ -101,6 +105,7 @@ def setup_benchmark_binary(force=False):
         script_path.parent / "benchmark_model",
         project_root / "benchmark_model",
         results_root / "benchmark_model",
+        *([Path(checkout) / "benchmark_model"] if checkout else []),
         Path.cwd() / "benchmark_model",
     ]
     local_binary = next((c for c in candidates if c.exists()), None)
@@ -239,7 +244,7 @@ def main():
     
     subprocess.run(["adb", "start-server"], capture_output=True)
     subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
-    setup_benchmark_binary(force=args.reinstall_bench)
+    setup_benchmark_binary(force=args.reinstall_bench, checkout=checkout)
     
     gpu_full_name = get_gpu_name()
     device_model = adb_getprop("ro.product.model")
