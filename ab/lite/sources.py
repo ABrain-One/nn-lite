@@ -106,5 +106,9 @@ class PackageSource:
             return None
         path = self._code_dir / table / f"{name}.py"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(rows[0][0])
+        # Written under another name and then renamed, so that a run benchmarking another
+        # phone at the same time never reads a half-written file.
+        temp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        temp.write_text(rows[0][0])
+        os.replace(temp, path)
         return path

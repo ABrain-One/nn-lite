@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest filelock
       - name: Run unit tests (no phone, PyTorch or TensorFlow needed)
         run: python -m pytest -v tests
 

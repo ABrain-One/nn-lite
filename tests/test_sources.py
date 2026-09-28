@@ -80,3 +80,4 @@ def test_package_source_writes_code_from_the_database(tmp_path):
     assert source.model_file("AirNet").read_text() == MODEL
     assert source.transform_file("norm_128") == tmp_path / "code" / "transform" / "norm_128.py"
     assert source.transform_file("missing") is None
+    assert not list((tmp_path / "code").rglob("*.tmp"))  # written under a temporary name, then renamed
