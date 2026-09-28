@@ -10,7 +10,6 @@ from typing import List, Dict, Any, Tuple
 import torch
 import litert_torch as ai_edge_torch  # package renamed from ai-edge-torch
 from ab.nn.api import data
-from ab.lite.data_loader import RepresentativeDataset
 import importlib
 import logging
 import traceback
@@ -514,7 +513,7 @@ class ContinuousProcessor:
             
             # Convert model without quantization (FP32)
             if quant_enabled:
-                logger.info(f"Using Int8 Quantization")
+                logger.info("Using Int8 Quantization")
                 # This won't run since quant_enabled = False
             else:
                 with torch.no_grad():
@@ -817,7 +816,7 @@ class ContinuousProcessor:
                 if push_result.returncode != 0:
                     logger.warning(f"⚠️ Push attempt {attempt} failed: {push_result.stderr}")
                     if attempt < max_push_attempts:
-                        logger.info(f"⏳ Waiting 5 seconds before retry...")
+                        logger.info("⏳ Waiting 5 seconds before retry...")
                         time.sleep(5)
                     continue
                 
@@ -826,13 +825,13 @@ class ContinuousProcessor:
                 verify_result = self.run_adb(['shell', 'ls', '-la', f"{self.device_model_dir}/{filename}"], capture_output=True, text=True)
                 
                 if verify_result.returncode == 0 and filename in verify_result.stdout:
-                    logger.info(f"✅ Model pushed and verified successfully")
+                    logger.info("✅ Model pushed and verified successfully")
                     push_success = True
                     break
                 else:
                     logger.warning(f"⚠️ Verification attempt {attempt} failed - file not found on device")
                     if attempt < max_push_attempts:
-                        logger.info(f"⏳ Waiting 5 seconds before retry...")
+                        logger.info("⏳ Waiting 5 seconds before retry...")
                         time.sleep(5)
             
             if not push_success:
@@ -846,7 +845,7 @@ class ContinuousProcessor:
             device_model_path = f"{self.device_model_dir}/{filename}"
             pre_launch_check = self.run_adb(['shell', 'ls', device_model_path], capture_output=True, text=True)
             if pre_launch_check.returncode != 0:
-                logger.error(f"❌ Model file disappeared before launch! Re-pushing...")
+                logger.error("❌ Model file disappeared before launch! Re-pushing...")
                 # Emergency re-push
                 self.run_adb(['push', str(tflite_file), device_model_path], capture_output=True, text=True)
                 time.sleep(2)  # Wait for file to stabilize
@@ -1045,21 +1044,18 @@ class ContinuousProcessor:
             logger.info(f"🔄 Processing {idx}/{total_models}: {model_name}")
             logger.info(f"{'='*60}")
             
-            success = True
             
             # Step 1: Convert to TFLite
             logger.info("🔄 Converting model to TFLite...")
             if not self.convert_model(model_name):
                 logger.error(f"❌ Conversion failed for {model_name}")
                 self.failed_models.append(model_name)
-                success = False
             else:
                 # Step 2: Run benchmark
                 logger.info("📊 Running benchmark on device...")
                 if not self.run_benchmark(model_name):
                     logger.error(f"❌ Benchmark failed for {model_name}")
                     self.failed_models.append(model_name)
-                    success = False
                 else:
                     self.processed_models.append(model_name)
                     logger.info(f"✅ Successfully processed {model_name}")

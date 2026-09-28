@@ -163,13 +163,6 @@ def adb_getprop(key):
     lines = adb_shell(f"getprop {key}").splitlines()
     return lines[-1] if lines else ""
 
-def get_gpu_name():
-    raw = adb_shell("dumpsys SurfaceFlinger | grep GLES")
-    if "Adreno" in raw:
-        parts = raw.split(",")
-        if len(parts) > 1: return parts[1].strip()
-    return "Adreno (TM) 660"
-
 def get_android_memory():
     mem = {}
     raw = adb_shell("cat /proc/meminfo")
@@ -287,7 +280,6 @@ def main():
     subprocess.run(["adb", "shell", "svc power stayon true"], capture_output=True)
     setup_benchmark_binary(force=args.reinstall_bench, checkout=checkout)
 
-    gpu_full_name = get_gpu_name()
     device_model = adb_getprop("ro.product.model")
     device_clean = device_model.replace(" ", "_")
     os_ver = f"{adb_getprop('ro.build.version.release')} | {adb_getprop('ro.build.id')}"
@@ -324,7 +316,7 @@ def main():
         time.sleep(COOL_DOWN_MODEL)
         
         if session_counter >= RESTART_EVERY_N_MODELS:
-            print(f"\n[THERMAL] Resetting Session...")
+            print("\n[THERMAL] Resetting Session...")
             time.sleep(COOL_DOWN_SESSION)
             restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root)]
             if checkout: restart_args += ["--dataset-root", str(checkout)]
@@ -373,7 +365,7 @@ def main():
             dummy_input = (torch.randn(*shape),)
 
             # --- PROCESS FP32 ---
-            print(f"   [PROCESS] FP32 Conversion...")
+            print("   [PROCESS] FP32 Conversion...")
             fp32_tflite = temp_dl_dir / f"{name}_fp32.tflite"
             litert_torch.convert(model, dummy_input).export(str(fp32_tflite))
             
@@ -381,9 +373,9 @@ def main():
             int8_tflite = temp_dl_dir / f"{name}_int8.tflite"
             int8_success = False
             if calib_set is None:
-                print(f"   [INFO] INT8 skipped: give --calib-dir with sample images to calibrate it.")
+                print("   [INFO] INT8 skipped: give --calib-dir with sample images to calibrate it.")
             else:
-                print(f"   [PROCESS] INT8 Conversion...")
+                print("   [PROCESS] INT8 Conversion...")
                 try:
                     calib = calibration_images(calib_set, model_tf, shape[2:])
                     # Feed batches of the model's batch size (1 for LEMUR models; a .pt2 file

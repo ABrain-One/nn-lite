@@ -39,7 +39,7 @@ def test_input_size_comes_from_the_transform_output():
 
 
 def test_calibration_with_fewer_images_and_non_square_input():
-    np = pytest.importorskip("numpy")
+    pytest.importorskip("numpy")
     torch = pytest.importorskip("torch")
     from ab.lite.preprocess import calibration_images
 
