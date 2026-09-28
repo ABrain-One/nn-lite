@@ -50,7 +50,7 @@ NN-Lite serves researchers who train models in PyTorch and need reproducible lat
 
 **Quantization calibrated on representative data.** Integer export used before a representative set of synthetic random noise. Such a set misrepresents the activation statistics and can reduce accuracy: AirNet, for example, reached 79.1% top-1 accuracy on CIFAR-10 compared to 86.6%. The calibration uses real images now. These images are processed with the input transformation of the model itself.
 
-**A tested programming interface.** Output parsing, error extraction and record construction are separated from the device control into documented importable modules, which need neither the deep learning frameworks nor the Android Debug Bridge. Unit tests cover the modules. The tests run in continuous integration and do not need a phone. Each device keeps a progress ledger of its own, so a fleet can be benchmarked in parallel.
+**A tested programming interface.** Output parsing, error extraction and record construction are separated from the device control into documented importable modules, which need neither the deep learning frameworks nor the Android Debug Bridge. Unit tests cover the modules. The tests run in continuous integration and do not need a phone. Each device keeps a progress ledger of its own, and every device command carries an explicit serial number, so one process per phone runs at the same time on one workstation and writes into a shared results folder. A lock serializes the shared downloads, each run uses a temporary folder of its own, and model code is renamed into place, so a run never reads a partially written file.
 
 # State of the field
 
@@ -86,6 +86,6 @@ We designed and implemented the NN-Lite software. No generative AI assistance wa
 
 # Acknowledgements
 
-This work was partially supported by the Alexander von Humboldt Foundation. We thank Saif U Din and Muhammad Ahsan Hussain, whose work on the measurement campaign reported in @Din2026NNLite shaped the requirements of this release. Thanks go to the LEMUR dataset contributors.
+This work was partially supported by the Alexander von Humboldt Foundation. We thank Saif U Din, and Muhammad Ahsan Hussain, whose work on the measurement campaign reported in @Din2026NNLite shaped the requirements of this release. Thanks go to the LEMUR dataset contributors.
 
 # References
