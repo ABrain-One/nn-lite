@@ -2,6 +2,9 @@
 
 <img src='https://abrain.one/img/nnlite-logo.png' width='25%'/>
 
+<sub><a href='https://pypi.python.org/pypi/nn-lit'><img src='https://img.shields.io/pypi/v/nn-lit.svg'/></a> <!-- <a href="https://pepy.tech/project/nn-lit"><img alt="GitHub release" src="https://static.pepy.tech/badge/nn-lit"></a> --> <br/>
+short alias  <a href='https://pypi.python.org/pypi/lmob'>lmob</a></sub>
+
 The original open-source version of the <a href='https://github.com/ABrain-One/NN-Lite/'>NN Lite</a> was developed by <strong>Faraz Kayani</strong>, <strong>Saif U Din</strong> and <strong>Muhammad Ahsan Hussain</strong> at the Computer Vision Laboratory, University of Würzburg, Germany, under the supervision and technical guidance of <strong>Dr. Dmitry Ignatov</strong>, whose foundational work established the basis for the project.
 
 NN-Lite measures how fast PyTorch models run on real Android phones. For every model in the
