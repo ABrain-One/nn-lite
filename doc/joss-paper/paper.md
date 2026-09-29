@@ -78,7 +78,7 @@ Two limitations have to be mentioned. First, NN-Lite reports wall clock latency 
 
 NN-Lite is the on device measurement component of the LEMUR ecosystem [@Goodarzi2025LEMUR]. Its emulator execution path provided the inference latency measurements for more than 7,500 models in LEMUR 2 [@Uzun2026LEMUR2]. The physical device path produced the delegate resolved latency dataset reported in @Din2026NNLite, which covers 586 architectures across five commodity phones from three chip vendors. These records are publicly available. They have been used as well to fit device specific latency models by symbolic regression [@Dhanani2026Symbolic] and to show that FLOPs predict latency poorly unless the backend is taken into account [@Din2026BMVC].
 
-Release 1.0.0 is on the Python Package Index. Unit tests cover the release and run in continuous integration on three Python versions, while the documentation addresses external users. We verified both model sources end to end on a phone. The verification included a model outside the collection (torchvision MobileNetV3), so other groups can benchmark their own models.
+Release 1.0.0 is on the Python Package Index as `nn-lit`. Unit tests cover the release and run in continuous integration on three Python versions, while the documentation addresses external users. We verified both model sources end to end on a phone. The verification included a model outside the collection (torchvision MobileNetV3), so other groups can benchmark their own models.
 
 # AI usage disclosure
 
