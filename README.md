@@ -19,8 +19,9 @@ failures instead of skipping them. An optional emulator path (Android Studio) is
 
 ## Requirements
 
-- Linux (tested on Ubuntu) with Python 3.10 or newer
-- `adb` (Android platform tools): `sudo apt install adb`, or the [SDK platform tools](https://developer.android.com/tools/releases/platform-tools)
+- Linux (tested on Ubuntu) or macOS on Apple Silicon, with Python 3.10 or newer
+- `adb` (Android platform tools): `sudo apt install adb` on Linux, `brew install --cask android-platform-tools`
+  on macOS, or the [SDK platform tools](https://developer.android.com/tools/releases/platform-tools)
 - An Android phone with USB debugging enabled (see [Connect a phone](#connect-a-phone)); no root is needed
 - An internet connection and about 2 GB of free disk space: the first run downloads the LEMUR
   database (about 1.2 GB unpacked) and the CIFAR-10 training set used for INT8 calibration;
@@ -283,7 +284,7 @@ python -m pytest tests
 ## Contributing and support
 
 Bug reports, questions and feature requests are welcome in the
-[issue tracker](https://github.com/ABrain-One/nn-lite/issues). See [CONTRIBUTING.md](CONTRIBUTING.md)
+[issue tracker](https://github.com/ABrain-One/nn-lite/issues). See [CONTRIBUTING.md](https://github.com/ABrain-One/nn-lite/blob/main/CONTRIBUTING.md)
 for how to propose changes and how the project is maintained.
 
 ## Citation
@@ -321,6 +322,6 @@ If you find this project to be useful for your research, please consider citing 
 
 ## License
 
-NN-Lite is released under the [MIT License](LICENSE).
+NN-Lite is released under the [MIT License](https://github.com/ABrain-One/nn-lite/blob/main/LICENSE).
 
 #### The idea and leadership of Dr. Ignatov

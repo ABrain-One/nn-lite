@@ -2,7 +2,7 @@
 
 All notable changes to NN-Lite are documented in this file.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-09-30
 
 ### Added
 - Physical-device benchmarking engine (`ab/lite/torch2tflite.py`): FP32 and INT8 conversion,
