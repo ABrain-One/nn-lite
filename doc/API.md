@@ -19,7 +19,7 @@ Benchmarks models on an Android phone attached over USB, either from
 local files given with `--model-path` or from the NN Dataset (LEMUR). Dataset
 models are read from an `nn-dataset` checkout if one is found (see below),
 otherwise from the `nn-dataset` package that is installed together with
-NN-Lite. Installed by `pip install nn-lite`. From a source checkout
+NN-Lite. Installed by `pip install nn-lit`. From a source checkout
 the equivalent command is `python -m ab.lite.torch2tflite`.
 
 ```bash
@@ -108,7 +108,7 @@ python -m ab.lite.torch2tflite-all [NAME ...]
 
 Runs models inside an Android emulator through the app in `App/`. It requires
 Android Studio and the `nn-dataset` Python package, which is installed with NN-Lite
-(the `emulator` extra, `pip install nn-lite[emulator]`, is kept for compatibility),
+(the `emulator` extra, `pip install nn-lit[emulator]`, is kept for compatibility),
 and writes records with `emulator: true` in the same schema as the physical-device
 path, so results from both can be stored and filtered together. They are saved
 in `out/benchmark_reports/<task>_<Model>/` rather than in `ab/nn/stat/`. `out/` is

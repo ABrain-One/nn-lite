@@ -32,7 +32,7 @@ All notable changes to NN-Lite are documented in this file.
 
 ### Changed
 - The NN Dataset package is now a dependency, and models and transforms are read from it by
-  default (`ab/lite/sources.py`), so `pip install nn-lite` is all that is needed. The LEMUR
+  default (`ab/lite/sources.py`), so `pip install nn-lit` is all that is needed. The LEMUR
   database is downloaded on first use; results are written to `./nn-lite-results` (or `--out`)
   in the dataset's layout. An nn-dataset checkout given with `--dataset-root` or
   `NN_DATASET_ROOT`, or found next to a source checkout of NN-Lite or in the current folder, is

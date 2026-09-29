@@ -46,7 +46,7 @@ python -m pip install --upgrade pip
 
 Install NN-Lite from PyPI:
 ```bash
-pip install nn-lite
+pip install nn-lit
 ```
 This also installs the [NN Dataset](https://github.com/ABrain-One/nn-dataset) package, from
 which NN-Lite reads the models, so nothing else needs to be cloned. Results are written to
