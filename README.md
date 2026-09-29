@@ -10,11 +10,11 @@ The original open-source version of the <a href='https://github.com/ABrain-One/N
 NN-Lite measures how fast PyTorch models run on real Android phones. For every model in the
 [LEMUR / NN Dataset](https://github.com/ABrain-One/nn-dataset) it:
 
-1. rebuilds the network and loads its trained weights,
-2. converts it to LiteRT (TensorFlow Lite) in **FP32** and full-integer **INT8** (calibrated on real
+1. Rebuilds the network and loads its trained weights,
+2. Converts it to LiteRT (TensorFlow Lite) in **FP32** and full-integer **INT8** (calibrated on real
    CIFAR-10 training images, prepared with the model's own input transform),
-3. copies it to a phone over USB and times it with the official `benchmark_model` tool on the **CPU**, **GPU** and **NPU (NNAPI)**,
-4. saves one JSON record per model, precision and device, in the same layout as the dataset.
+3. Copies it to a phone over USB and times it with the official `benchmark_model` tool on the **CPU**, **GPU** and **NPU (NNAPI)**,
+4. Saves one JSON record per model, precision and device, in the same layout as the dataset.
 
 Runs are unattended and resumable: NN-Lite waits if the USB cable is unplugged, lets the phone
 cool down between models, restarts itself every 50 models (`--restart-every`), and records
