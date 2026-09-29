@@ -86,6 +86,6 @@ We designed and implemented the NN-Lite software. No generative AI assistance wa
 
 # Acknowledgements
 
-This work was partially supported by the Alexander von Humboldt Foundation. We thank Saif U Din, and Muhammad Ahsan Hussain, whose work on the measurement campaign reported in @Din2026NNLite shaped the requirements of this release. Thanks go to the LEMUR dataset contributors.
+This work was partially supported by the Alexander von Humboldt Foundation. We thank Saif U Din, and Muhammad Ahsan Hussain, whose work on the measurement campaign reported in @Din2026NNLite shaped the requirements of this release. We thank the contributors to the LEMUR dataset.
 
 # References
