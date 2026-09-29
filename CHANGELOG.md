@@ -26,6 +26,8 @@ All notable changes to NN-Lite are documented in this file.
   `--serial`, a run with several phones connected stops and lists them. Runs for phones of
   different models can share a results folder: each phone has its own temporary folder, and
   the shared downloads and each phone model's progress ledger are locked (`ab/lite/locks.py`).
+- `--restart-every N` option to set how often the process restarts to free memory (default 50
+  models, as before; 0 never restarts), so the restart can be tried in a few minutes.
 - JOSS paper draft in `doc/joss-paper/`.
 
 ### Changed

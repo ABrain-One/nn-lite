@@ -255,7 +255,12 @@ def main():
     ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"),
                     help="Serial number of the phone to benchmark, as listed by 'adb devices' "
                          "(default: $ANDROID_SERIAL, or the only phone connected)")
+    ap.add_argument("--restart-every", type=int, default=RESTART_EVERY_N_MODELS, metavar="N",
+                    help="Restart the process after every N models to release the memory held by the "
+                         f"converter; 0 never restarts (default: {RESTART_EVERY_N_MODELS})")
     args = ap.parse_args()
+    if args.restart_every < 0:
+        ap.error("--restart-every must be 0 or more")
 
     # Choose the phone first, so a wrong choice is reported before any download.
     devices = adb.connected_devices()
@@ -344,11 +349,11 @@ def main():
     for idx, name in enumerate(to_process, 1):
         time.sleep(COOL_DOWN_MODEL)
         
-        if session_counter >= RESTART_EVERY_N_MODELS:
+        if args.restart_every and session_counter >= args.restart_every:
             print("\n[THERMAL] Resetting Session...")
             time.sleep(COOL_DOWN_SESSION)
             restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root),
-                            "--serial", adb.serial]
+                            "--serial", adb.serial, "--restart-every", str(args.restart_every)]
             if checkout: restart_args += ["--dataset-root", str(checkout)]
             if local:
                 restart_args += ["--model-path", *args.model_path, "--input-size", str(args.input_size)]

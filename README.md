@@ -14,8 +14,8 @@ NN-Lite measures how fast PyTorch models run on real Android phones. For every m
 4. saves one JSON record per model, precision and device, in the same layout as the dataset.
 
 Runs are unattended and resumable: NN-Lite waits if the USB cable is unplugged, lets the phone
-cool down between models, restarts itself every 50 models, and records failures instead of
-skipping them. An optional emulator path (Android Studio) is also included.
+cool down between models, restarts itself every 50 models (`--restart-every`), and records
+failures instead of skipping them. An optional emulator path (Android Studio) is also included.
 
 ## Requirements
 
@@ -149,6 +149,7 @@ nn-lite-bench
 | `--out PATH` | Write results to this folder instead (default: the checkout, or `./nn-lite-results`) |
 | `--model-path PATH [PATH ...]` | Benchmark your own models instead (see [Your own models](#your-own-models)) |
 | `--serial SERIAL` | Benchmark this phone, as listed by `adb devices` (needed when several are connected) |
+| `--restart-every N` | Restart the process after every N models to free memory (default 50; 0 never restarts) |
 | `--force` | Forget the connected phone's progress and start from the beginning |
 | `--reinstall-bench` | Copy `benchmark_model` to the phone again |
 

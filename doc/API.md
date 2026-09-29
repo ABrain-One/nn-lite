@@ -23,10 +23,11 @@ NN-Lite. Installed by `pip install nn-lite`. From a source checkout
 the equivalent command is `python -m ab.lite.torch2tflite`.
 
 ```bash
-nn-lite-bench [--models NAME [NAME ...]] [--android-runs N] [--serial SERIAL]
+nn-lite-bench [--models NAME [NAME ...]] [--android-runs N] [--serial SERIAL] [--restart-every N]
               [--dataset-root PATH] [--out PATH] [--force] [--reinstall-bench]
 nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
-              [--models NAME [NAME ...]] [--android-runs N] [--serial SERIAL] [--out PATH] [--force]
+              [--models NAME [NAME ...]] [--android-runs N] [--serial SERIAL] [--restart-every N]
+              [--out PATH] [--force]
 ```
 
 | Option | Default | Meaning |
@@ -36,6 +37,7 @@ nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
 | `--dataset-root PATH` | see below | Location of the `nn-dataset` checkout that models are read from and records are written to. An error if `PATH` is not a checkout. |
 | `--out PATH` | the checkout, or `./nn-lite-results` | Folder the records and working files are written to. |
 | `--serial SERIAL` | `$ANDROID_SERIAL`, or the only phone connected | The phone to benchmark, by the serial number `adb devices` lists for it. Needed when several phones are connected. |
+| `--restart-every N` | `50` | After every N models, pause for 60 s and restart the process, which releases the memory the converter keeps between models; the new process continues from the progress ledger with the same options, except `--force` and `--reinstall-bench`. `0` never restarts. |
 | `--force` | off | Delete the progress ledger of the connected phone and start from the beginning. Other phones are unaffected. |
 | `--reinstall-bench` | off | Push the `benchmark_model` binary to the phone again, even if it is already present. |
 | `--model-path PATH [PATH ...]` | off | Benchmark models from local files or folders instead of the NN Dataset (see below). `--model_path` is accepted too. |
