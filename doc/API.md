@@ -332,6 +332,13 @@ the runs share; waits while another run holds it.
 **`claim(progress_path, device_model)`** — locks a phone model's progress ledger
 until the run ends; raises `RuntimeError` if another run holds it.
 
+### `ab.lite.options` — command-line options and restarts
+
+**`parser()`** — the argument parser of `nn-lite-bench` with the options above.
+**`restart_args(args, results_root, serial, checkout=None) -> list`** — the options
+the process restarts itself with after every `--restart-every` models: the same
+options, results folder and phone, without `--force` and `--reinstall-bench`.
+
 ### `ab.lite.torch2tflite` — the pipeline
 
 **`main()`** — entry point behind `nn-lite-bench`; parses the arguments above and
@@ -376,9 +383,9 @@ ones, and extend the schema test in `tests/test_results.py`.
 
 The unit tests cover parsing, error extraction, the record schema, calibration
 preprocessing, the progress ledger, the choice of the model source, finding
-`--model-path` models, choosing the phone and the locks between runs. They need
-neither a phone nor PyTorch, TensorFlow or the NN Dataset; the tests that load
-`--model-path` models run when PyTorch is installed:
+`--model-path` models, choosing the phone, the locks between runs and the options
+kept across restarts. They need neither a phone nor PyTorch, TensorFlow or the NN
+Dataset; the tests that load `--model-path` models run when PyTorch is installed:
 
 ```bash
 pip install pytest filelock

@@ -273,8 +273,8 @@ python -m ab.lite.torch2tflite-all AirNet ga-196 ga-197 ga-198
 ## Running the tests
 
 The unit tests cover output parsing, error extraction, the result schema, the choice of the
-model source and of the phone, and the locks between runs. They need neither a phone nor
-PyTorch, TensorFlow or the NN Dataset:
+model source and of the phone, the locks between runs and the options kept across restarts.
+They need neither a phone nor PyTorch, TensorFlow or the NN Dataset:
 ```bash
 pip install pytest filelock
 python -m pytest tests

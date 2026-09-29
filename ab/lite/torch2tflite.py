@@ -22,12 +22,11 @@ from the installed nn-dataset package and results are written to
 With --model-path, models are read from local files instead (see
 ab/lite/local_models.py) and the NN Dataset is not used at all.
 """
-import sys, os, argparse, json, re, importlib.util, shutil, time, gc
+import sys, os, json, re, importlib.util, shutil, time, gc
 from pathlib import Path
 
 # --- CONFIGURATION ---
 SOURCE_REPO = "NN-Dataset/checkpoints-epoch-50"
-RESTART_EVERY_N_MODELS = 50 
 COOL_DOWN_MODEL = 2        
 COOL_DOWN_SESSION = 60     
 
@@ -68,6 +67,7 @@ try:
     from ab.lite.local_models import find_models, load_local_model, calibration_set, default_transform
     from ab.lite import adb
     from ab.lite.locks import downloading, claim
+    from ab.lite.options import parser, restart_args
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
                          parse_benchmark_output, build_record)
@@ -77,6 +77,7 @@ except ImportError:  # executed as a plain script, e.g. after a session restart
     from local_models import find_models, load_local_model, calibration_set, default_transform
     import adb
     from locks import downloading, claim
+    from options import parser, restart_args
 
 import torch, torchvision, torchvision.transforms as T, litert_torch, tensorflow as tf, numpy as np
 from huggingface_hub import hf_hub_download, list_repo_files
@@ -230,37 +231,8 @@ def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=No
 
 # --- CORE LOGIC ---
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--android-runs", type=int, default=20)
-    ap.add_argument("--force", action="store_true")
-    ap.add_argument("--reinstall-bench", action="store_true",
-                    help="Force re-push of benchmark_model binary to device")
-    ap.add_argument("--dataset-root", default=None,
-                    help="nn-dataset checkout to read models from and write results into "
-                         "(default: $NN_DATASET_ROOT, or an nn-dataset folder next to the nn-lite checkout "
-                         "or in the current folder; without one, the installed nn-dataset package is used)")
-    ap.add_argument("--out", default=None,
-                    help="Folder for the results (default: the nn-dataset checkout, or ./nn-lite-results "
-                         "when the installed package is used)")
-    ap.add_argument("--models", nargs="+", default=None,
-                    help="Only process these model names (default: all models)")
-    ap.add_argument("--model-path", "--model_path", nargs="+", default=None,
-                    help="Benchmark models from these files or folders instead of the NN Dataset: "
-                         ".pt2 files saved with torch.export, or .py files with a .pt/.pth file of the same name")
-    ap.add_argument("--input-size", type=int, default=224,
-                    help="Input side length for --model-path models given as .py and .pt files (default: 224)")
-    ap.add_argument("--calib-dir", default=None,
-                    help="Folder of sample images for INT8 calibration of --model-path models "
-                         "(without it, only FP32 is benchmarked)")
-    ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"),
-                    help="Serial number of the phone to benchmark, as listed by 'adb devices' "
-                         "(default: $ANDROID_SERIAL, or the only phone connected)")
-    ap.add_argument("--restart-every", type=int, default=RESTART_EVERY_N_MODELS, metavar="N",
-                    help="Restart the process after every N models to release the memory held by the "
-                         f"converter; 0 never restarts (default: {RESTART_EVERY_N_MODELS})")
+    ap = parser()
     args = ap.parse_args()
-    if args.restart_every < 0:
-        ap.error("--restart-every must be 0 or more")
 
     # Choose the phone first, so a wrong choice is reported before any download.
     devices = adb.connected_devices()
@@ -352,14 +324,8 @@ def main():
         if args.restart_every and session_counter >= args.restart_every:
             print("\n[THERMAL] Resetting Session...")
             time.sleep(COOL_DOWN_SESSION)
-            restart_args = ["--android-runs", str(args.android_runs), "--out", str(results_root),
-                            "--serial", adb.serial, "--restart-every", str(args.restart_every)]
-            if checkout: restart_args += ["--dataset-root", str(checkout)]
-            if local:
-                restart_args += ["--model-path", *args.model_path, "--input-size", str(args.input_size)]
-                if args.calib_dir: restart_args += ["--calib-dir", args.calib_dir]
-            if args.models: restart_args += ["--models", *args.models]
-            os.execv(sys.executable, [sys.executable, sys.argv[0]] + restart_args)
+            os.execv(sys.executable, [sys.executable, sys.argv[0]]
+                     + restart_args(args, results_root, adb.serial, checkout))
 
         print(f"\n[{idx}/{len(to_process)}] Model: {name}")
         try:
