@@ -33,7 +33,7 @@
   <circle cx="34" cy="84" r="12" fill="#7C5CBF"/>
   <text x="34" y="89" text-anchor="middle" class="num">1</text>
   <text x="54" y="90" class="ttl">Models</text>
-  <text x="24" y="112" class="sub">from the LEMUR dataset</text>
+  <text x="24" y="112" class="sub">local file or LEMUR dataset</text>
 
   <!-- database icon -->
   <path d="M66,136 V166 A34,9 0 0 0 134,166 V136" fill="#DDD3F3" stroke="#7C5CBF" stroke-width="1.5"/>
@@ -47,9 +47,9 @@
   <rect x="24" y="296" width="152" height="44" rx="9" fill="#FFFFFF" stroke="#B9A5E0" stroke-width="1.5"/>
   <text x="100" y="323" text-anchor="middle" class="b15">Trained weights</text>
 
-  <text x="100" y="384" text-anchor="middle" font-size="14" font-weight="700" fill="#3F2A78">No per-model setup:</text>
-  <text x="100" y="404" text-anchor="middle" class="t14">input size is read</text>
-  <text x="100" y="422" text-anchor="middle" class="t14">from the model itself</text>
+  <text x="100" y="384" text-anchor="middle" font-size="14" font-weight="700" fill="#3F2A78">or a local file:</text>
+  <text x="100" y="404" text-anchor="middle" class="t14">torch.export program, or</text>
+  <text x="100" y="422" text-anchor="middle" class="t14">.py module + checkpoint</text>
 
   <!-- ================= 2. Convert (workstation) ================= -->
   <rect x="212" y="60" width="240" height="418" rx="14" fill="#EAF2FB" stroke="#2F6DB5" stroke-width="1.5"/>
@@ -129,9 +129,9 @@
   <circle cx="561" cy="314" r="9" fill="#FFFFFF" stroke="#1F2933" stroke-width="2"/>
   <rect x="558.5" y="300" width="5" height="4" rx="1" fill="#1F2933"/>
   <line x1="561" y1="314" x2="561" y2="308" stroke="#1F2933" stroke-width="2" stroke-linecap="round"/>
-  <text x="583" y="319" font-size="16" font-weight="700" fill="#1F2933">NPU</text>
+  <text x="583" y="319" font-size="15" font-weight="700" fill="#1F2933">NNAPI</text>
 
-  <text x="597" y="376" text-anchor="middle" class="t14">20 timed runs each</text>
+  <text x="597" y="376" text-anchor="middle" class="t14">requested, 20 runs each</text>
   <rect x="522" y="390" width="150" height="46" rx="8" fill="#E2E8F0"/>
   <text x="597" y="408" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1F2933">+ device probe</text>
   <text x="597" y="426" text-anchor="middle" font-size="13" fill="#323F4B">chip, cores, RAM, OS</text>
@@ -149,7 +149,7 @@
   <circle cx="764" cy="84" r="12" fill="#D69E2E"/>
   <text x="764" y="89" text-anchor="middle" class="num">4</text>
   <text x="784" y="90" class="ttl">Save</text>
-  <text x="754" y="112" class="sub">one file per model</text>
+  <text x="754" y="112" class="sub">per model, precision, phone</text>
 
   <rect x="750" y="122" width="190" height="232" rx="10" fill="#1E293B"/>
   <text class="code">
@@ -168,7 +168,7 @@
   <line x1="845" y1="356" x2="845" y2="376" class="flow" marker-end="url(#ah)"/>
   <path d="M813,386 V408 A32,8 0 0 0 877,408 V386" fill="#F6DFA8" stroke="#D69E2E" stroke-width="1.5"/>
   <ellipse cx="845" cy="386" rx="32" ry="8" fill="#FCEFC9" stroke="#D69E2E" stroke-width="1.5"/>
-  <text x="845" y="440" text-anchor="middle" class="b15">Added to LEMUR</text>
+  <text x="845" y="440" text-anchor="middle" class="b15">Optional: add to LEMUR</text>
   <text x="845" y="459" text-anchor="middle" class="t14">next to training stats</text>
 
   <!-- ================= LEMUR into step 2 ================= -->
