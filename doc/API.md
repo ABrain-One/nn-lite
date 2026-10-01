@@ -166,7 +166,7 @@ the schema.
 | `os_version` | string | Android release and build, e.g. `10 \| HUAWEISTK-L21`. |
 | `valid` | bool | `false` if every backend failed; the record is still written. |
 | `emulator` | bool | `false` for the physical-device path. |
-| `iterations` | int | Timed runs per backend (`--android-runs`). |
+| `iterations` | int | Timed runs requested per backend (`--android-runs`). |
 | `duration` | int | Latency of the fastest backend, nanoseconds. Absent when `valid` is `false`. |
 | `unit` | string | Fastest backend: `CPU`, `GPU` or `NPU`. Absent when `valid` is `false`. |
 | `cpu_duration`, `cpu_min_duration`, `cpu_max_duration` | int | Mean, minimum and maximum CPU latency, nanoseconds. |
@@ -175,6 +175,7 @@ the schema.
 | `total_ram_kb`, `free_ram_kb`, `available_ram_kb`, `cached_kb` | int | Phone memory state at measurement time. |
 | `in_dim_0` … `in_dim_3` | int | Input shape as batch, height, width, channels. |
 | `device_analytics` | object | Core count, CPU implementer/architecture/variant/part/revision, features and SoC string. |
+| `cpu_runs`, `gpu_runs`, `npu_runs` | int | Timed runs actually performed per backend, as reported by `benchmark_model`; `0` for a failed backend. Absent when `valid` is `false`. Added in 1.0.1. |
 | `cpu_error`, `gpu_error`, `npu_error` | string | Present only for a backend that failed; up to three extracted error lines, truncated to 500 characters. |
 
 When at least one backend succeeded, a failed backend still has its four numeric
@@ -183,6 +184,12 @@ failed. When every backend failed, the record has no latency fields at all, only
 the `*_error` keys. All latencies are
 nanoseconds — `benchmark_model` reports microseconds, which NN-Lite converts on
 parse.
+
+The latencies are those of the timed runs only. `benchmark_model` first runs a
+warm-up phase and reports statistics for it too; NN-Lite ignores them. It is run
+with `--num_runs=<iterations> --min_secs=0 --max_secs=3600`, so every backend
+performs exactly `iterations` timed runs: by default, `benchmark_model` would also
+repeat a model until one second had passed, and stop after 150 seconds.
 
 Example (abridged):
 
@@ -205,7 +212,8 @@ Example (abridged):
   "total_ram_kb": 3775716, "free_ram_kb": 189496,
   "available_ram_kb": 1617764, "cached_kb": 1638264,
   "in_dim_0": 1, "in_dim_1": 128, "in_dim_2": 128, "in_dim_3": 3,
-  "device_analytics": {"timestamp": 1758979200.0, "cpu_info": {"cpu_cores": 8}}
+  "device_analytics": {"timestamp": 1758979200.0, "cpu_info": {"cpu_cores": 8}},
+  "cpu_runs": 20, "gpu_runs": 20, "npu_runs": 20
 }
 ```
 
@@ -227,18 +235,18 @@ from ab.lite.results import (
 **`BACKENDS`** — `("cpu", "gpu", "npu")`, the canonical order.
 
 **`parse_benchmark_output(out: str) -> dict`**
-Parses a `benchmark_model` summary line and returns
-`{"avg", "min", "max", "std", "status"}`, with latencies converted from
-microseconds to nanoseconds and `status` set to `"ok"`. Missing values stay `0.0`.
-
-```python
->>> parse_benchmark_output("count=20 min=30718 max=36410 avg=31118.1 std=1323")
-{'avg': 31118100.0, 'min': 30718000.0, 'max': 36410000.0, 'std': 1323000.0, 'status': 'ok'}
-```
+Parses the statistics of the timed runs — the second "Running benchmark for at
+least …" phase; the warm-up phase before it is ignored — and returns
+`{"avg", "min", "max", "std", "runs", "status"}`, with latencies converted from
+microseconds to nanoseconds, `runs` the number of timed runs performed and
+`status` set to `"ok"`. Averages in scientific notation (`avg=1.29563e+06`) and
+the `count=N curr=T (all same)` form are supported. Raises `ValueError` if the
+statistics of the timed runs are missing, incomplete or inconsistent, instead of
+returning plausible zeros.
 
 **`benchmark_failed(out: str) -> bool`**
 `True` when the output contains no usable timing summary — an `ERROR:` line, a
-compute failure, or no `avg=` at all.
+compute failure, or no statistics for the timed runs.
 
 **`extract_error_from_output(out: str) -> str`**
 Returns a one-line diagnosis: up to the first three lines matching the module's

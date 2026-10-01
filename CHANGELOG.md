@@ -2,6 +2,25 @@
 
 All notable changes to NN-Lite are documented in this file.
 
+## [1.0.1] - Unreleased
+
+### Fixed
+- Latencies are read from the timed runs of `benchmark_model`. The parser took the first
+  statistics in the output, which are those of the warm-up phase, for every model whose
+  warm-up had more than one run.
+- Averages of one second or more, which `benchmark_model` prints in scientific notation
+  (e.g. `avg=1.29563e+06`), were read as about one microsecond, which could also make a
+  backend wrongly appear as the fastest.
+- Every backend now performs exactly `--android-runs` timed runs (`--min_secs=0
+  --max_secs=3600`); by default `benchmark_model` repeated a model until one second had
+  passed and stopped after 150 seconds, so the number of runs varied with the model.
+- Incomplete or unreadable `benchmark_model` output is reported as a failed backend with its
+  full output in the error log, instead of being stored as a plausible record.
+
+### Added
+- `cpu_runs`, `gpu_runs` and `npu_runs` in each record: the number of timed runs actually
+  performed, next to the requested `iterations`.
+
 ## [1.0.0] - 2026-09-30
 
 ### Added
