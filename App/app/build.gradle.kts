@@ -66,7 +66,7 @@ dependencies {
         androidTestImplementation(libs.androidx.junit)
         androidTestImplementation(libs.androidx.espresso.core)
 
-        // ✅ Stable combo
+        // Versions known to work together
         implementation("org.tensorflow:tensorflow-lite:2.14.0")
         implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
         implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")

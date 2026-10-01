@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# install-android-studio-medium.sh
-# No-sudo, per-user installer that robustly attempts downloads and ensures Medium Phone AVD setup.
+# install-android-studio.sh
+# Installs Android Studio, the Android SDK and a "Medium Phone" emulator for the current user, without sudo.
 
 ##############################
 # Config - edit if you want
@@ -112,16 +112,16 @@ if "$AVDMANAGER" list avd | grep -q "$AVD_NAME"; then
   warn "AVD $AVD_NAME already exists; skipping creation."
 else
   if echo "no" | "$AVDMANAGER" create avd -n "$AVD_NAME" -k "$SYSTEM_IMAGE_PATH" -d "$DEVICE_ID" 2>/dev/null; then
-    info "✅ AVD $AVD_NAME created successfully."
+    info "AVD $AVD_NAME created successfully."
   else
-    warn "❌ Failed to create Medium Phone device; falling back to 'pixel' profile."
+    warn "Failed to create Medium Phone device; falling back to 'pixel' profile."
     echo "no" | "$AVDMANAGER" create avd -n "$AVD_NAME" -k "$SYSTEM_IMAGE_PATH" -d "pixel" || warn "AVD creation failed."
   fi
 fi
 
 cat <<EOF
 
-🎉 Installation complete!
+Installation complete!
 
 Android Studio:  $STUDIO_DIR
 SDK Root:        $SDK_ROOT
@@ -133,7 +133,7 @@ To start emulator:
 To launch Android Studio:
   android-studio &
 
-✅ Paths added to your ~/.bashrc and ~/.profile automatically.
+Paths added to your ~/.bashrc and ~/.profile automatically.
 Restart your terminal once, or run:
   source ~/.bashrc
 EOF

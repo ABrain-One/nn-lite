@@ -182,7 +182,7 @@ When at least one backend succeeded, a failed backend still has its four numeric
 fields, set to `0`; the presence of the matching `*_error` key is what marks it as
 failed. When every backend failed, the record has no latency fields at all, only
 the `*_error` keys. All latencies are
-nanoseconds — `benchmark_model` reports microseconds, which NN-Lite converts on
+nanoseconds: `benchmark_model` reports microseconds, which NN-Lite converts on
 parse.
 
 The latencies are those of the timed runs only. `benchmark_model` first runs a
@@ -228,7 +228,7 @@ Example (abridged):
 
 ## 4. Python API
 
-### `ab.lite.results` — parsing and records
+### `ab.lite.results`: parsing and records
 
 No dependency on PyTorch, TensorFlow or `adb`; importable and testable anywhere.
 
@@ -239,11 +239,11 @@ from ab.lite.results import (
 )
 ```
 
-**`BACKENDS`** — `("cpu", "gpu", "npu")`, the canonical order.
+**`BACKENDS`**: `("cpu", "gpu", "npu")`, the canonical order.
 
 **`parse_benchmark_output(out: str) -> dict`**
-Parses the statistics of the timed runs — the second "Running benchmark for at
-least …" phase; the warm-up phase before it is ignored — and returns
+Parses the statistics of the timed runs, which are the second "Running benchmark
+for at least …" phase (the warm-up phase before it is ignored), and returns
 `{"avg", "min", "max", "std", "runs", "status"}`, with latencies converted from
 microseconds to nanoseconds, `runs` the number of timed runs performed and
 `status` set to `"ok"`. Averages in scientific notation (`avg=1.29563e+06`) and
@@ -295,13 +295,13 @@ rec = build_record(
 )
 ```
 
-### `ab.lite.preprocess` — calibration inputs
+### `ab.lite.preprocess`: calibration inputs
 
 ```python
 from ab.lite.preprocess import CIFAR10_NORM, load_transform, preprocess, calibration_images
 ```
 
-**`CIFAR10_NORM`** — the CIFAR-10 mean/standard-deviation pair used by NN Dataset.
+**`CIFAR10_NORM`**: the CIFAR-10 mean/standard-deviation pair used by NN Dataset.
 
 **`load_transform(transforms_dir, name, norm=CIFAR10_NORM) -> Callable`**
 Loads the torchvision transform `name` from `<dataset-root>/ab/nn/transform/`
@@ -319,67 +319,71 @@ The first `count` images (or all, if there are fewer) of an `(image, label)`
 dataset, preprocessed for quantization. Used as the representative dataset for full-integer post-training
 quantization.
 
-### `ab.lite.progress` — resumable runs
+### `ab.lite.progress`: resumable runs
 
 ```python
 from ab.lite.progress import progress_file, load_progress, save_progress
 ```
 
-**`progress_file(work_dir, device) -> Path`** — path of the ledger for one phone;
+**`progress_file(work_dir, device) -> Path`**: path of the ledger for one phone;
 the device string is sanitised into the filename.
-**`load_progress(path) -> dict`** — the ledger, or `{"processed": [], "failed": []}`
+**`load_progress(path) -> dict`**: the ledger, or `{"processed": [], "failed": []}`
 if it does not exist.
-**`save_progress(path, state)`** — writes the ledger as indented JSON.
+**`save_progress(path, state)`**: writes the ledger as indented JSON.
 
 Ledgers are per phone, so benchmarking a second device does not skip models
 measured only on the first, and `--force` resets one device only.
 
-### `ab.lite.adb` — the phone in use
+### `ab.lite.adb`: the phone in use
 
 ```python
 from ab.lite import adb
 ```
 
-**`adb.serial`** — serial number of the phone every command is sent to (`None` for
+**`adb.serial`**: serial number of the phone every command is sent to (`None` for
 adb's default phone).
-**`command(*args) -> list`** / **`run(*args) -> CompletedProcess`** — the adb
+**`command(*args) -> list`** / **`run(*args) -> CompletedProcess`**: the adb
 command line for `args`, with `-s <serial>`, and running it.
-**`list_devices(output) -> dict`** — `{serial: state}` from the output of
+**`list_devices(output) -> dict`**: `{serial: state}` from the output of
 `adb devices`; **`connected_devices()`** runs it.
-**`choose_device(requested, devices) -> str`** — the serial to use: `requested`
+**`choose_device(requested, devices) -> str`**: the serial to use: `requested`
 if given, otherwise the only phone in state `device`; raises `ValueError`
 otherwise.
-**`core_speeds(output) -> dict`** — `{core: maximum frequency in kHz}` from the
+**`core_speeds(output) -> dict`**: `{core: maximum frequency in kHz}` from the
 output of `CORE_SPEEDS_COMMAND` run on the phone.
-**`fast_cores_mask(speeds) -> str | None`** — hexadecimal `taskset` mask of every
+**`fast_cores_mask(speeds) -> str | None`**: hexadecimal `taskset` mask of every
 core except the slowest group; `None` if all cores are equally fast or unknown.
 
-### `ab.lite.locks` — several phones, one results folder
+### `ab.lite.locks`: several phones, one results folder
 
-**`downloading(work_dir)`** — context manager held while downloading the files
+**`downloading(work_dir)`**: context manager held while downloading the files
 the runs share; waits while another run holds it.
-**`claim(progress_path, device_model)`** — locks a phone model's progress ledger
+**`claim(progress_path, device_model)`**: locks a phone model's progress ledger
 until the run ends; raises `RuntimeError` if another run holds it.
 
-### `ab.lite.options` — command-line options and restarts
+### `ab.lite.options`: command-line options and restarts
 
-**`parser()`** — the argument parser of `nn-lite-bench` with the options above.
-**`restart_args(args, results_root, serial, checkout=None) -> list`** — the options
+**`parser()`**: the argument parser of `nn-lite-bench` with the options above.
+**`restart_args(args, results_root, serial, checkout=None) -> list`**: the options
 the process restarts itself with after every `--restart-every` models: the same
 options, results folder and phone, without `--force` and `--reinstall-bench`.
 
-### `ab.lite.torch2tflite` — the pipeline
+### `ab.lite.torch2tflite`: the pipeline
 
-**`main()`** — entry point behind `nn-lite-bench`; parses the arguments above and
+**`main()`**: entry point behind `nn-lite-bench`; parses the arguments above and
 runs the benchmarking loop.
-**`default_dataset_root() -> Path | None`** — applies rules 2–4 of the resolution
+**`default_dataset_root() -> Path | None`**: applies rules 2–4 of the resolution
 order; `None` when no checkout is found and the installed package is used.
-**`set_dataset_root(root)`** — points all output paths at a checkout (or any
+**`set_dataset_root(root)`**: points all output paths at a checkout (or any
 results folder) and creates the directories it needs. Call before other functions
 in this module.
-**`run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None) -> dict`**
-— runs `benchmark_model` on the phone for one backend and returns a parsed result
-or `failed_result`, appending failures to `log_path`.
+**`run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None, affinity=None) -> dict`**:
+runs `benchmark_model` on the phone for one backend, pinned to the cores of the
+`taskset` mask `affinity` if one is given, and returns a parsed result or
+`failed_result`, appending failures to `log_path`.
+**`fast_cores() -> str | None`**: the `taskset` mask of all cores of the phone except
+the slowest group, or `None` when the cores are equally fast, their speed is unknown or
+the phone has no `taskset`.
 
 ---
 
