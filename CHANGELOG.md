@@ -16,6 +16,10 @@ All notable changes to NN-Lite are documented in this file.
   passed and stopped after 150 seconds, so the number of runs varied with the model.
 - Incomplete or unreadable `benchmark_model` output is reported as a failed backend with its
   full output in the error log, instead of being stored as a plausible record.
+- `benchmark_model` runs on the fast cores (`taskset`, all cores except the slowest group)
+  for every backend. Unpinned, Android often ran it on the slow cores: AirNet FP32 on the
+  CPU took 184–225 ms on a Galaxy A55 instead of 27–30 ms on its fast cores, and
+  279–320 ms instead of 191–196 ms on a Huawei Y9 Prime.
 
 ### Added
 - `cpu_runs`, `gpu_runs` and `npu_runs` in each record: the number of timed runs actually

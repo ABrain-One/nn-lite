@@ -191,6 +191,13 @@ with `--num_runs=<iterations> --min_secs=0 --max_secs=3600`, so every backend
 performs exactly `iterations` timed runs: by default, `benchmark_model` would also
 repeat a model until one second had passed, and stop after 150 seconds.
 
+On a phone with cores of different speeds, every backend runs on all cores except
+the slowest group (`taskset`, e.g. mask `f0` for four slow and four fast cores).
+Android otherwise often runs programs started over adb on the slow cores, so the
+same model could take several times longer from one run to the next. If the core
+speeds cannot be read, all cores are equally fast or the phone has no `taskset`,
+NN-Lite prints so at start-up and runs unpinned.
+
 Example (abridged):
 
 ```json
@@ -332,6 +339,10 @@ command line for `args`, with `-s <serial>`, and running it.
 **`choose_device(requested, devices) -> str`** — the serial to use: `requested`
 if given, otherwise the only phone in state `device`; raises `ValueError`
 otherwise.
+**`core_speeds(output) -> dict`** — `{core: maximum frequency in kHz}` from the
+output of `CORE_SPEEDS_COMMAND` run on the phone.
+**`fast_cores_mask(speeds) -> str | None`** — hexadecimal `taskset` mask of every
+core except the slowest group; `None` if all cores are equally fast or unknown.
 
 ### `ab.lite.locks` — several phones, one results folder
 

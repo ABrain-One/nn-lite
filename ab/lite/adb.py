@@ -62,6 +62,38 @@ def choose_device(requested, devices):
                      "USB debugging turned on")
 
 
+# Prints one line per core of the phone: "<core> <maximum frequency in kHz>".
+CORE_SPEEDS_COMMAND = ('for c in /sys/devices/system/cpu/cpu[0-9]*; do '
+                       'echo "${c##*cpu} $(cat $c/cpufreq/cpuinfo_max_freq 2>/dev/null)"; done')
+
+
+def core_speeds(output):
+    """``{core: maximum frequency in kHz}`` from the output of ``CORE_SPEEDS_COMMAND``.
+
+    Cores whose frequency cannot be read (e.g. switched off) are left out.
+    """
+    speeds = {}
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            speeds[int(parts[0])] = int(parts[1])
+    return speeds
+
+
+def fast_cores_mask(speeds):
+    """``taskset`` mask (hexadecimal) of every core except the slowest group, or None.
+
+    Phones combine fast and slow cores, and Android often runs a program started over
+    adb on the slow ones, so its timings vary with the cores it happens to get. Pinning
+    it to all cores faster than the slowest group (e.g. ``f0`` for 4 fast + 4 slow
+    cores) makes them repeatable. None if all cores are equally fast or unknown.
+    """
+    if len(set(speeds.values())) < 2:
+        return None
+    slowest = min(speeds.values())
+    return format(sum(1 << core for core, khz in speeds.items() if khz > slowest), "x")
+
+
 def folder_name(serial):
     """``serial`` made safe for use in a file name (serials of phones on Wi-Fi contain ':')."""
     return re.sub(r"[^A-Za-z0-9._-]+", "_", serial)

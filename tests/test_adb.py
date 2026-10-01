@@ -72,3 +72,21 @@ def test_disconnected(stderr, expected):
 def test_folder_name():
     assert adb.folder_name("192.168.1.20:5555") == "192.168.1.20_5555"
     assert adb.folder_name("R58M12ABCDE") == "R58M12ABCDE"
+
+
+def test_core_speeds_reads_each_core():
+    out = "0 1709000\n1 1709000\n2 1709000\n3 1709000\n4 2189000\n5 2189000\n6 2189000\n7 2189000\n"
+    assert adb.core_speeds(out) == {**{c: 1709000 for c in range(4)}, **{c: 2189000 for c in range(4, 8)}}
+    # A core switched off has no readable frequency and is left out.
+    assert adb.core_speeds("0 1800000\n1 \ncat: no such file\n") == {0: 1800000}
+
+
+@pytest.mark.parametrize("speeds, mask", [
+    ({**{c: 2050000 for c in range(4)}, **{c: 2750000 for c in range(4, 8)}}, "f0"),         # 4 slow + 4 fast
+    ({**{c: 1800000 for c in range(4)}, **{c: 2400000 for c in range(4, 7)}, 7: 3000000}, "f0"),  # 4 + 3 + 1
+    ({**{c: 1800000 for c in range(6)}, 6: 2600000, 7: 2600000}, "c0"),                       # 6 slow + 2 fast
+    ({c: 2000000 for c in range(8)}, None),                                                   # all equal
+    ({}, None),                                                                               # unknown
+])
+def test_fast_cores_mask_leaves_out_the_slowest_cores(speeds, mask):
+    assert adb.fast_cores_mask(speeds) == mask
