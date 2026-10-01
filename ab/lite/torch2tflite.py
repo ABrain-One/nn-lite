@@ -202,12 +202,22 @@ def get_device_analytics():
     return {"timestamp": time.time(), "cpu_info": {"cpu_cores": len([p for p in processors if 'processor' in p]), "processors": processors[:4], "arm_architecture": {"hardware": global_meta["hardware"] or soc, "features": global_meta["features"], "cpu_implementer": global_meta["cpu implementer"], "cpu_architecture": global_meta["cpu architecture"], "cpu_variant": global_meta["cpu variant"], "cpu_part": global_meta["cpu part"], "cpu_revision": global_meta["cpu revision"]}}}
 
 # --- BENCHMARK ---
-def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None):
-    """Run benchmark_model for one (backend, mode) combo and parse results."""
+def fast_cores():
+    """``taskset`` mask that pins benchmark_model to the fast cores, or None if it cannot be pinned."""
+    mask = adb.fast_cores_mask(adb.core_speeds(adb_shell(adb.CORE_SPEEDS_COMMAND)))
+    if mask and "taskset" in adb_shell("which taskset"):
+        return mask
+    return None
+
+def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None, affinity=None):
+    """Run benchmark_model for one (backend, mode) combo and parse results.
+
+    ``affinity`` is the taskset mask of the cores to run on (see ``fast_cores``)."""
     flag = {"cpu": "--use_xnnpack=false", "gpu": "--use_gpu=true", "npu": "--use_nnapi=true"}.get(backend, "")
     # Exactly `runs` timed runs: by default benchmark_model also repeats until 1 s has passed
     # (min_secs) and stops after 150 s (max_secs), which changes the number of runs.
-    cmd = (f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} "
+    cmd = (f"{f'taskset {affinity} ' if affinity else ''}"
+           f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} "
            f"--min_secs=0 --max_secs={MAX_BENCH_SECS} {flag}")
     out = adb_shell(cmd)
 
@@ -287,6 +297,12 @@ def main():
 
     adb.run("shell", "svc power stayon true")
     setup_benchmark_binary(force=args.reinstall_bench, checkout=checkout)
+    affinity = fast_cores()
+    if affinity:
+        print(f"[SETUP] benchmark_model runs on the fast cores (taskset {affinity})")
+    else:
+        print("[SETUP] benchmark_model runs on any core: the cores are equally fast, "
+              "their speed is unknown or taskset is missing")
 
     device_model = adb_getprop("ro.product.model")
     device_clean = device_model.replace(" ", "_")
@@ -420,9 +436,9 @@ def main():
                 dev_p = f"/data/local/tmp/nn_lite_{mode}.tflite"
                 push_model(tflite_path, dev_p)
                 
-                c = run_bench(dev_p, "cpu", args.android_runs, log_path=error_log, model_name=name, mode=mode)
-                g = run_bench(dev_p, "gpu", args.android_runs, log_path=error_log, model_name=name, mode=mode)
-                n = run_bench(dev_p, "npu", args.android_runs, log_path=error_log, model_name=name, mode=mode)
+                c = run_bench(dev_p, "cpu", args.android_runs, log_path=error_log, model_name=name, mode=mode, affinity=affinity)
+                g = run_bench(dev_p, "gpu", args.android_runs, log_path=error_log, model_name=name, mode=mode, affinity=affinity)
+                n = run_bench(dev_p, "npu", args.android_runs, log_path=error_log, model_name=name, mode=mode, affinity=affinity)
                 adb_shell(f"rm {dev_p}")
 
                 memory = get_android_memory()
