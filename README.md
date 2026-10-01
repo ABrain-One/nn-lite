@@ -32,18 +32,10 @@ failures instead of skipping them. An optional emulator path (Android Studio) is
 
 ## Installation
 
-Create and activate a virtual environment (recommended).
-
-For Linux/Mac:
+Create and activate a virtual environment (recommended):
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-```
-For Windows:
-```bash
-python3 -m venv .venv
-.venv\Scripts\activate
 python -m pip install --upgrade pip
 ```
 
@@ -133,7 +125,8 @@ An abridged record (latencies are in nanoseconds; `unit` is the fastest backend)
   "npu_duration": 364514000, "npu_min_duration": 357856000, "npu_max_duration": 371171000, "npu_std_dev": 6657000.0,
   "total_ram_kb": 3775716, "free_ram_kb": 189496, "available_ram_kb": 1617764, "cached_kb": 1638264,
   "in_dim_0": 1, "in_dim_1": 128, "in_dim_2": 128, "in_dim_3": 3,
-  "device_analytics": { "...": "CPU cores, SoC and ARM architecture of the phone" }
+  "device_analytics": { "...": "CPU cores, SoC and ARM architecture of the phone" },
+  "cpu_runs": 20, "gpu_runs": 20, "npu_runs": 20
 }
 ```
 If a backend fails, its error message is stored in `cpu_error`, `gpu_error` or `npu_error`; if

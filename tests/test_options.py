@@ -64,3 +64,10 @@ def test_restart_every():
     assert parser().parse_args(["--restart-every", "0"]).restart_every == 0  # never restart
     with pytest.raises(SystemExit):
         parser().parse_args(["--restart-every", "-1"])
+
+
+def test_android_runs():
+    assert parser().parse_args([]).android_runs == 20
+    for runs in ("0", "-5"):  # benchmark_model would then time no runs at all
+        with pytest.raises(SystemExit):
+            parser().parse_args(["--android-runs", runs])

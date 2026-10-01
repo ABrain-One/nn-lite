@@ -20,10 +20,22 @@ All notable changes to NN-Lite are documented in this file.
   for every backend. Unpinned, Android often ran it on the slow cores: AirNet FP32 on the
   CPU took 184–225 ms on a Galaxy A55 instead of 27–30 ms on its fast cores, and
   279–320 ms instead of 191–196 ms on a Huawei Y9 Prime.
+- The error output (stderr) of `benchmark_model` was discarded, so `cpu_error`, `gpu_error`,
+  `npu_error` and the error log never contained its error messages; the stored message was
+  made of its progress lines (e.g. `INFO: NNAPI delegate created.`). Its error output and
+  exit status are now kept, `INFO:` lines are no longer taken as errors, and a crash is
+  reported as such (e.g. `benchmark_model crashed (SIGSEGV)`).
+- A backend counts as failed when `benchmark_model` exits with an error or prints no
+  statistics for the timed runs, not because of an `ERROR:` line: the GPU delegate reports
+  the operations it leaves to the CPU as errors although the model runs.
+- `--android-runs` must be 1 or more.
 
 ### Added
 - `cpu_runs`, `gpu_runs` and `npu_runs` in each record: the number of timed runs actually
   performed, next to the requested `iterations`.
+
+### Removed
+- `ab/lite/data_loader.py`, which nothing used.
 
 ## [1.0.0] - 2026-09-30
 

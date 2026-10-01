@@ -33,7 +33,7 @@ nn-lite-bench --model-path PATH [PATH ...] [--input-size N] [--calib-dir DIR]
 | Option | Default | Meaning |
 |---|---|---|
 | `--models NAME [NAME ...]` | all models | Benchmark only the named models. Names are the model file stems in `ab/nn/nn/`, e.g. `AirNet`, or the file stems of the `--model-path` models. |
-| `--android-runs N` | `20` | Timed runs per backend, passed to `benchmark_model --num_runs`. |
+| `--android-runs N` | `20` | Timed runs per backend (1 or more), passed to `benchmark_model --num_runs`. |
 | `--dataset-root PATH` | see below | Location of the `nn-dataset` checkout that models are read from and records are written to. An error if `PATH` is not a checkout. |
 | `--out PATH` | the checkout, or `./nn-lite-results` | Folder the records and working files are written to. |
 | `--serial SERIAL` | `$ANDROID_SERIAL`, or the only phone connected | The phone to benchmark, by the serial number `adb devices` lists for it. Needed when several phones are connected. |
@@ -234,8 +234,8 @@ No dependency on PyTorch, TensorFlow or `adb`; importable and testable anywhere.
 
 ```python
 from ab.lite.results import (
-    BACKENDS, parse_benchmark_output, benchmark_failed,
-    extract_error_from_output, failed_result, build_record,
+    BACKENDS, parse_benchmark_output, benchmark_failed, exit_status,
+    extract_error_from_output, failed_result, build_record, EXIT_STATUS,
 )
 ```
 
@@ -251,14 +251,24 @@ the `count=N curr=T (all same)` form are supported. Raises `ValueError` if the
 statistics of the timed runs are missing, incomplete or inconsistent, instead of
 returning plausible zeros.
 
+`benchmark_model` is run with its error output (stderr) merged into its output,
+followed by the line `EXIT_STATUS` + its exit status (`benchmark_model exit status: 0`).
+
+**`exit_status(out: str) -> int | None`**
+The exit status printed in the output, or `None` if there is none.
+
 **`benchmark_failed(out: str) -> bool`**
-`True` when the output contains no usable timing summary — an `ERROR:` line, a
-compute failure, or no statistics for the timed runs.
+`True` when `benchmark_model` exited with a non-zero status (an error or a crash)
+or printed no statistics for the timed runs. `ERROR:` lines alone do not count
+as a failure: the GPU delegate, for example, reports the operations it leaves to
+the CPU as errors and the model still runs.
 
 **`extract_error_from_output(out: str) -> str`**
 Returns a one-line diagnosis: up to the first three lines matching the module's
-error keywords, joined by `" | "` and truncated to 500 characters. Falls back to
-the last non-empty line, or `"no output from benchmark_model"` for empty output.
+error keywords, joined by `" | "` and truncated to 500 characters; `INFO:` lines
+are never taken as errors. Falls back to the last non-empty line, or
+`"no output from benchmark_model"` for empty output. A crash is reported as such
+(e.g. `benchmark_model crashed (SIGSEGV); last output: ...`).
 
 **`failed_result(error: str) -> dict`**
 A zeroed result dict with `status="failed"` and the given message, in the shape
