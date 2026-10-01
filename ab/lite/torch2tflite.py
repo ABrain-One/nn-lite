@@ -27,6 +27,7 @@ from pathlib import Path
 
 # --- CONFIGURATION ---
 SOURCE_REPO = "NN-Dataset/checkpoints-epoch-50"
+MAX_BENCH_SECS = 3600  # upper limit for the timed runs of one backend
 COOL_DOWN_MODEL = 2        
 COOL_DOWN_SESSION = 60     
 
@@ -203,31 +204,37 @@ def get_device_analytics():
 # --- BENCHMARK ---
 def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=None):
     """Run benchmark_model for one (backend, mode) combo and parse results."""
-    flag = {"cpu": "--use_xnnpack=false", "gpu": "--use_gpu=true", "npu": "--use_nnapi=true"}.get(backend, "")    
-    cmd = f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} {flag}"
+    flag = {"cpu": "--use_xnnpack=false", "gpu": "--use_gpu=true", "npu": "--use_nnapi=true"}.get(backend, "")
+    # Exactly `runs` timed runs: by default benchmark_model also repeats until 1 s has passed
+    # (min_secs) and stops after 150 s (max_secs), which changes the number of runs.
+    cmd = (f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} "
+           f"--min_secs=0 --max_secs={MAX_BENCH_SECS} {flag}")
     out = adb_shell(cmd)
 
-    if benchmark_failed(out):
+    if not benchmark_failed(out):
+        try:
+            return parse_benchmark_output(out)
+        except ValueError as e:
+            error_msg = f"unreadable benchmark_model output: {e}"
+    else:
         error_msg = extract_error_from_output(out)
-        if log_path is not None:
-            try:
-                with open(log_path, "a") as f:
-                    f.write("=" * 72 + "\n")
-                    f.write(f"timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"model:     {model_name}\n")
-                    f.write(f"mode:      {mode}\n")
-                    f.write(f"backend:   {backend}\n")
-                    f.write(f"command:   {cmd}\n")
-                    f.write(f"extracted: {error_msg}\n")
-                    f.write("--- raw output ---\n")
-                    f.write(out if out else "(empty)\n")
-                    f.write("\n")
-            except Exception as log_err:
-                print(f"   [LOG WARN] could not write to {log_path}: {log_err}")
 
-        return failed_result(error_msg)
-
-    return parse_benchmark_output(out)
+    if log_path is not None:
+        try:
+            with open(log_path, "a") as f:
+                f.write("=" * 72 + "\n")
+                f.write(f"timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"model:     {model_name}\n")
+                f.write(f"mode:      {mode}\n")
+                f.write(f"backend:   {backend}\n")
+                f.write(f"command:   {cmd}\n")
+                f.write(f"extracted: {error_msg}\n")
+                f.write("--- raw output ---\n")
+                f.write(out if out else "(empty)\n")
+                f.write("\n")
+        except Exception as log_err:
+            print(f"   [LOG WARN] could not write to {log_path}: {log_err}")
+    return failed_result(error_msg)
 
 # --- CORE LOGIC ---
 def main():
