@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
             reportJson.put("model_name", modelFileName?.removeSuffix(".tflite") ?: "UNKNOWN")
             reportJson.put("device_type", Build.MODEL)
             reportJson.put("os_version", ANDROID_STUDIO_VERSION)
-            reportJson.put("valid", true) // Always reports success
+            reportJson.put("valid", true) // set to false below if the model file is missing
             reportJson.put("emulator", Build.FINGERPRINT.startsWith("generic") || Build.MODEL.contains("sdk") || Build.MODEL.contains("emulator"))
             
             withContext(Dispatchers.Main) {
@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
             // Verify model file exists ONCE before running any benchmarks
             val modelFile = File(modelDevicePath)
             if (!modelFile.exists()) {
-                Log.e(TAG, "❌ Model file does not exist at path: $modelDevicePath")
+                Log.e(TAG, "Model file does not exist at path: $modelDevicePath")
                 val errorObj = JSONObject()
                 errorObj.put("error", "Model file not found on device")
                 results.put("CPU", errorObj)
@@ -114,12 +114,12 @@ class MainActivity : AppCompatActivity() {
                 saveJsonReport(modelFileName, reportJson)
                 
                 withContext(Dispatchers.Main) {
-                    statusText.text = "❌ Model file not found on device"
+                    statusText.text = "Model file not found on device"
                     progressBar.isVisible = false
                 }
                 return@launch
             }
-            Log.d(TAG, "✓ Model file verified: ${modelFile.absolutePath} (${modelFile.length()} bytes)")
+            Log.d(TAG, "Model file verified: ${modelFile.absolutePath} (${modelFile.length()} bytes)")
 
             for ((name, type) in delegates) {
                 try {
@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity() {
                                 val stdDev = Math.sqrt(sumSqDiff / durations.size)
                                 
                                 val stats = JSONObject()
-                                stats.put("duration_ns", avg.toLong()) // Primary is now Average
+                                stats.put("duration_ns", avg.toLong()) // average
                                 stats.put("min_ns", min)
                                 stats.put("max_ns", max)
                                 stats.put("avg_ns", avg)
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                     val timeoutJob = launch {
                         delay(timeoutMs)
                         if (!result.isCompleted) {
-                            Log.w(TAG, "⚠️ $name benchmark timed out after ${timeoutMs/1000}s - skipping")
+                            Log.w(TAG, "$name benchmark timed out after ${timeoutMs/1000}s - skipping")
                             result.complete(null)
                             job.cancel()
                         }
@@ -214,7 +214,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            // Add global duration fields as requested (using Average)
+            // Top-level duration fields: the average of each successful delegate
             if (results.has("CPU") && !results.getJSONObject("CPU").has("error")) {
                 val cpuStats = results.getJSONObject("CPU")
                 reportJson.put("cpu_duration", cpuStats.getLong("avg_ns")) // Average
@@ -257,7 +257,7 @@ class MainActivity : AppCompatActivity() {
             // Helper to get hardware names
             val cpuName = if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else Build.HARDWARE
             val gpuName = try {
-                // Quick hack to get GPU renderer without full GLSurfaceView
+                // GPU renderer name from a temporary EGL context, without a GLSurfaceView
                 val egl = javax.microedition.khronos.egl.EGLContext.getEGL() as javax.microedition.khronos.egl.EGL10
                 val dpy = egl.eglGetDisplay(javax.microedition.khronos.egl.EGL10.EGL_DEFAULT_DISPLAY)
                 val version = IntArray(2)
@@ -324,7 +324,7 @@ class MainActivity : AppCompatActivity() {
             // Give the system time to flush the file to disk before app might be killed
             Thread.sleep(500)
             
-            Log.d(TAG, "✅ Benchmark workflow completed successfully for $modelFileName")
+            Log.d(TAG, "Benchmark workflow completed successfully for $modelFileName")
 
             withContext(Dispatchers.Main) {
                 val sb = StringBuilder("Benchmark Complete!\n")
@@ -340,7 +340,7 @@ class MainActivity : AppCompatActivity() {
                     val npu = results.getJSONObject("NPU")
                     sb.append("NPU: ${npu.getLong("duration_ns") / 1_000_000} ms\n")
                 }
-                sb.append("\n✅ Report saved")
+                sb.append("\nReport saved")
                 statusText.text = sb.toString()
                 progressBar.isVisible = false
             }
@@ -366,12 +366,12 @@ class MainActivity : AppCompatActivity() {
             
             // Verify file was written
             if (reportFile.exists() && reportFile.length() > 0) {
-                Log.d(TAG, "✅ JSON report saved successfully to: ${reportFile.absolutePath} (${reportFile.length()} bytes)")
+                Log.d(TAG, "JSON report saved successfully to: ${reportFile.absolutePath} (${reportFile.length()} bytes)")
             } else {
-                Log.e(TAG, "❌ FATAL: Report file not created or empty")
+                Log.e(TAG, "FATAL: Report file not created or empty")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ FATAL: Could not save JSON report: ${e.message}", e)
+            Log.e(TAG, "FATAL: Could not save JSON report: ${e.message}", e)
         }
     }
 

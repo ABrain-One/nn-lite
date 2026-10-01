@@ -1,4 +1,4 @@
-# continuous_processor.py
+# Emulator path of NN-Lite: converts LEMUR models to LiteRT and times them in the Android app in App/.
 import sys
 import os
 import gc
@@ -123,7 +123,7 @@ class ContinuousProcessor:
         for serial, state in devices:
             if state == 'device' and not serial.startswith('emulator-'):
                 self.adb_serial = serial
-                logger.info(f"✅ Selected real device: {serial}")
+                logger.info(f"Selected real device: {serial}")
                 return True
 
         # Fallback to any emulator device
@@ -233,12 +233,12 @@ class ContinuousProcessor:
                     "arm_architecture": arm_data
                 }
 
-            logger.info("✅ Device analytics collected successfully")
+            logger.info("Device analytics collected successfully")
             
         except subprocess.TimeoutExpired:
-            logger.warning("⚠️ Timeout while collecting device analytics")
+            logger.warning("Timeout while collecting device analytics")
         except Exception as e:
-            logger.warning(f"⚠️ Could not collect device analytics: {e}")
+            logger.warning(f"Could not collect device analytics: {e}")
         
         return analytics
 
@@ -266,28 +266,7 @@ class ContinuousProcessor:
                                 units['cpu'] = v.strip()
                                 break
 
-            # GPU detection: SKIPPED as requested
-            # try_paths = [
-            #     '/sys/class/kgsl/kgsl-3d0/gpu_model',
-            #     '/sys/class/kgsl/kgsl-3d0/gpu_id',
-            #     '/sys/class/misc/mali0/name',
-            #     '/sys/class/misc/mali0/device/name',
-            # ]
-            # for p in try_paths:
-            #     res = self.run_adb(['shell', 'cat', p], capture_output=True, text=True)
-            #     if res.returncode == 0 and res.stdout.strip():
-            #         units['gpu'] = res.stdout.strip()
-            #         break
-            
-            # Fallback: try dumpsys SurfaceFlinger or GLES strings
-            # if not units['gpu']:
-            #     sf = self.run_adb(['shell', 'dumpsys', 'SurfaceFlinger'], capture_output=True, text=True)
-            #     if sf.returncode == 0 and sf.stdout:
-            #         out = sf.stdout
-            #         for marker in ('Adreno', 'Mali', 'PVR', 'PowerVR', 'Apple', 'Intel'):
-            #             if marker.lower() in out.lower():
-            #                 units['gpu'] = marker
-            #                 break
+            # The GPU is not detected here; the app reports its renderer name.
 
             # NPU / DSP detection - check for common vendor sysfs/driver names
             npu_paths = [
@@ -339,7 +318,7 @@ class ContinuousProcessor:
             return "unknown_avd"
             
         except Exception as e:
-            logger.warning(f"⚠️ Could not get AVD name: {e}")
+            logger.warning(f"Could not get AVD name: {e}")
             return "unknown_avd"
 
     def load_state(self) -> Dict[str, Any]:
@@ -476,7 +455,7 @@ class ContinuousProcessor:
             if est_mb is not None:
                 logger.info(f"Model params: {num_params:,} (~{est_mb:.1f} MB)")
                 if est_mb > float(self.max_param_mb):
-                    logger.error(f"❌ Skipping conversion: estimated model size {est_mb:.1f} MB exceeds threshold {self.max_param_mb} MB")
+                    logger.error(f"Skipping conversion: estimated model size {est_mb:.1f} MB exceeds threshold {self.max_param_mb} MB")
                     return False
             
             # Wrap and convert
@@ -484,54 +463,22 @@ class ContinuousProcessor:
             wrapped_model.eval()
             sample_input = torch.randn(min(batch, 4), size, size, 3)
             
-            # Quantization configuration
-            #quant_enabled = os.environ.get('QUANTIZE', '0') == '1'
-            # quant_enabled = True  # ← COMMENTED OUT - Quantization disabled
-            quant_enabled = False  # Using FP32 (no quantization)
-            # dataset_dir = os.environ.get('DATASET_DIR', './samples')
-            
-            # ===== 8-BIT QUANTIZATION CODE (COMMENTED OUT) =====
-            # if quant_enabled:
-            #     logger.info(f"Using Int8 Quantization with data from {dataset_dir}")
-            #     loader = RepresentativeDataset(dataset_dir, size=size, batch_size=min(batch, 4))
-            #     # Note: For now we rely on ai_edge_torch's default calibration or just the config.
-            #     # If a representative dataset is strictly required by the API version installed, 
-            #     # it should be passed. Current ai_edge_torch.convert signature with quant_config 
-            #     # often handles basic PTQ.
-            #     
-            #     quantizer = q.PT2EQuantizer().set_global(
-            #         q.pt2e_quantizer.get_symmetric_quantization_config(is_per_channel=False, is_qat=False, is_dynamic=False)
-            #     )
-            #     quant_config = q.quant_config.QuantConfig(pt2e_quantizer=quantizer)
-            #     
-            #     with torch.no_grad():
-            #          edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,), quant_config=quant_config)
-            # else:
-            #     with torch.no_grad():
-            #         edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
-            # ===== END QUANTIZATION CODE =====
-            
-            # Convert model without quantization (FP32)
-            if quant_enabled:
-                logger.info("Using Int8 Quantization")
-                # This won't run since quant_enabled = False
-            else:
-                with torch.no_grad():
-                    edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
-            
-            # output_filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"  # Old with _int8 suffix
-            output_filename = f"{model_name}.tflite"  # No _int8 suffix (quantization disabled)
+            # The emulator path converts to FP32 only.
+            with torch.no_grad():
+                edge_model = ai_edge_torch.convert(wrapped_model, (sample_input,))
+
+            output_filename = f"{model_name}.tflite"
             output_file = self.tflite_dir / output_filename
             edge_model.export(str(output_file))
             
             del model, wrapped_model, edge_model
             self.cleanup_memory()
             
-            logger.info(f"✅ Converted: {model_name} -> {output_filename}")
+            logger.info(f"Converted: {model_name} -> {output_filename}")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to convert {model_name}: {e}")
+            logger.error(f"Failed to convert {model_name}: {e}")
             return False
 
     def get_available_avds(self) -> List[str]:
@@ -570,24 +517,24 @@ class ContinuousProcessor:
         try:
             # First check if any emulator is already running
             if self.is_emulator_running():
-                logger.info("✅ Emulator is already running")
+                logger.info("Emulator is already running")
                 # Try to get the AVD name of the running emulator
                 self.current_avd_name = self.get_avd_name()
                 return True
             
-            logger.info("🚀 No emulator running, starting one...")
+            logger.info("No emulator running, starting one...")
             
             # Get available AVDs
             available_avds = self.get_available_avds()
             if not available_avds:
-                logger.error("❌ No Android Virtual Devices (AVDs) found.")
-                logger.info("💡 Please create an AVD in Android Studio first")
+                logger.error("No Android Virtual Devices (AVDs) found.")
+                logger.info("Please create an AVD in Android Studio first")
                 return False
             
             # Use the first available AVD
             target_avd = available_avds[0]
             self.current_avd_name = target_avd
-            logger.info(f"📱 Starting AVD: '{target_avd}'")
+            logger.info(f"Starting AVD: '{target_avd}'")
             
             # Start emulator in background
             process = subprocess.Popen(
@@ -597,7 +544,7 @@ class ContinuousProcessor:
             )
             
             # Wait for device to connect (3 minute timeout)
-            logger.info("⏳ Waiting for device to connect...")
+            logger.info("Waiting for device to connect...")
             wait_time = 0
             while wait_time < 180:  # 3 minute timeout
                 if self.is_emulator_running():
@@ -607,18 +554,18 @@ class ContinuousProcessor:
                 logger.info(f"   ... waited {wait_time}s")
             
             if not self.is_emulator_running():
-                logger.error("❌ Emulator failed to start within timeout")
+                logger.error("Emulator failed to start within timeout")
                 process.terminate()
                 return False
             
             # Wait for OS to boot completely (2 minute timeout)
-            logger.info("⏳ Waiting for OS to boot completely...")
+            logger.info("Waiting for OS to boot completely...")
             boot_time = 0
             while boot_time < 120:  # 2 minute timeout
                 try:
                     result = self.run_adb(['shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True, timeout=10)
                     if result.returncode == 0 and result.stdout.strip() == "1":
-                        logger.info("✅ Emulator is fully booted and ready")
+                        logger.info("Emulator is fully booted and ready")
                         return True
                 except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
                     pass
@@ -626,17 +573,17 @@ class ContinuousProcessor:
                 time.sleep(5)
                 boot_time += 5
             
-            logger.error("❌ Emulator boot timeout")
+            logger.error("Emulator boot timeout")
             return False
             
         except Exception as e:
-            logger.error(f"❌ Emulator startup failed: {e}")
+            logger.error(f"Emulator startup failed: {e}")
             return False
     
     def install_android_app(self) -> bool:
         """Install Android benchmark app using gradlew"""
         try:
-            logger.info("📦 Installing Android app...")
+            logger.info("Installing Android app...")
             
             # Ensure gradlew is executable
             gradlew_path = os.path.join(self.android_project_path, "gradlew")
@@ -652,15 +599,15 @@ class ContinuousProcessor:
             )
 
             if result.returncode == 0:
-                logger.info("✅ Android app installed successfully")
+                logger.info("Android app installed successfully")
                 return True
             else:
-                logger.error(f"❌ App installation failed: {result.stderr}")
+                logger.error(f"App installation failed: {result.stderr}")
                 # Attempt fallback: use adb install directly
                 try:
                     apk_path = os.path.join(self.android_project_path, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
                     if os.path.exists(apk_path):
-                        logger.info(f"🔁 Attempting fallback install via adb of '{apk_path}'")
+                        logger.info(f"Attempting fallback install via adb of '{apk_path}'")
                         # Ensure we have a target device selected
                         if not self.adb_serial:
                             self.select_target_device()
@@ -669,24 +616,24 @@ class ContinuousProcessor:
                         try:
                             ts = int(time.time())
                             log_file = out_dir / f"install_logcat_{ts}.log"
-                            logger.info(f"📥 Capturing device logcat to: {log_file}")
+                            logger.info(f"Capturing device logcat to: {log_file}")
                             adb_base = ['adb']
                             if self.adb_serial:
                                 adb_base.extend(['-s', self.adb_serial])
                             logcat_proc = subprocess.Popen(adb_base + ['logcat', '-v', 'time'], stdout=open(log_file, 'w'), stderr=subprocess.DEVNULL)
                         except Exception as e:
                             logcat_proc = None
-                            logger.warning(f"⚠️ Could not start logcat capture: {e}")
+                            logger.warning(f"Could not start logcat capture: {e}")
 
                         # Try adb install -r
                         adb_install = self.run_adb(['install', '-r', apk_path], capture_output=True, text=True)
                         if adb_install.returncode == 0:
-                            logger.info("✅ APK installed via adb fallback")
+                            logger.info("APK installed via adb fallback")
                             if logcat_proc:
                                 logcat_proc.terminate()
                             return True
                         else:
-                            logger.warning(f"⚠️ adb install returned: {adb_install.stderr}")
+                            logger.warning(f"adb install returned: {adb_install.stderr}")
                             # Try push + pm install as a last resort
                             try:
                                 remote_path = f"/data/local/tmp/{os.path.basename(apk_path)}"
@@ -694,16 +641,16 @@ class ContinuousProcessor:
                                 if push_res.returncode == 0:
                                     pm_res = self.run_adb(['shell', 'pm', 'install', '-r', remote_path], capture_output=True, text=True)
                                     if pm_res.returncode == 0:
-                                        logger.info("✅ APK installed via push+pm fallback")
+                                        logger.info("APK installed via push+pm fallback")
                                         if logcat_proc:
                                             logcat_proc.terminate()
                                         return True
                                     else:
-                                        logger.warning(f"⚠️ pm install failed: {pm_res.stderr}")
+                                        logger.warning(f"pm install failed: {pm_res.stderr}")
                                 else:
-                                    logger.warning(f"⚠️ adb push failed: {push_res.stderr}")
+                                    logger.warning(f"adb push failed: {push_res.stderr}")
                             except Exception as e:
-                                logger.warning(f"⚠️ Fallback push+pm install failed: {e}")
+                                logger.warning(f"Fallback push+pm install failed: {e}")
 
                         # Stop logcat capture and point user to the file
                         if logcat_proc:
@@ -712,25 +659,25 @@ class ContinuousProcessor:
                                 time.sleep(0.5)
                             except Exception:
                                 pass
-                            logger.info(f"🔍 Saved device logcat to: {log_file}")
+                            logger.info(f"Saved device logcat to: {log_file}")
                     else:
-                        logger.warning(f"⚠️ APK not found for fallback install: {apk_path}")
+                        logger.warning(f"APK not found for fallback install: {apk_path}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Error during fallback install: {e}")
+                    logger.warning(f"Error during fallback install: {e}")
 
                 return False
                 
         except subprocess.TimeoutExpired:
-            logger.error("❌ App installation timeout")
+            logger.error("App installation timeout")
             return False
         except Exception as e:
-            logger.error(f"❌ App installation error: {e}")
+            logger.error(f"App installation error: {e}")
             return False
     
     def force_stop_emulator(self):
         """Force stop the emulator"""
         try:
-            logger.info("🛑 Force stopping emulator...")
+            logger.info("Force stopping emulator...")
             
             # Kill emulator process
             self.run_adb(['emu', 'kill'], capture_output=True, timeout=30)
@@ -741,23 +688,23 @@ class ContinuousProcessor:
             # Force kill any remaining emulator processes
             subprocess.run(['pkill', '-f', 'emulator'], capture_output=True)
             
-            logger.info("✅ Emulator stopped")
+            logger.info("Emulator stopped")
             
         except Exception as e:
-            logger.error(f"⚠️ Error stopping emulator: {e}")
+            logger.error(f"Error stopping emulator: {e}")
     
     def handle_benchmark_failure(self, model_name: str):
         """Handle benchmark failure by waiting, closing everything, and restarting"""
-        logger.error(f"🔄 Benchmark failed for {model_name}, initiating recovery...")
+        logger.error(f"Benchmark failed for {model_name}, initiating recovery...")
         
         # Step 1: Wait for 3 minutes
-        logger.info("⏳ Waiting 3 minutes before recovery...")
+        logger.info("Waiting 3 minutes before recovery...")
         for i in range(180, 0, -10):
             logger.info(f"   ... {i} seconds remaining")
             time.sleep(10)
         
         # Step 2: Close everything
-        logger.info("🛑 Closing all processes...")
+        logger.info("Closing all processes...")
         
         # Force stop emulator
         self.force_stop_emulator()
@@ -765,7 +712,7 @@ class ContinuousProcessor:
         # Kill any ADB processes
         try:
             subprocess.run(['pkill', '-f', 'adb'], capture_output=True)
-            logger.info("✅ ADB processes killed")
+            logger.info("ADB processes killed")
         except:
             pass
         
@@ -773,10 +720,10 @@ class ContinuousProcessor:
         self.cleanup_memory()
         
         # Step 3: Wait a bit more
-        logger.info("⏳ Final wait before restart...")
+        logger.info("Final wait before restart...")
         time.sleep(10)
         
-        logger.info("🔄 Restarting process...")
+        logger.info("Restarting process...")
         
         # Restart the script
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -784,19 +731,17 @@ class ContinuousProcessor:
     def run_benchmark(self, model_name: str) -> bool:
         """Run benchmark on Android device and retrieve results"""
         try:
-            # quant_enabled = os.environ.get('QUANTIZE', '0') == '1'  # Not needed anymore
-            # filename = f"{model_name}_int8.tflite" if quant_enabled else f"{model_name}.tflite"  # Old with _int8 suffix
-            filename = f"{model_name}.tflite"  # No _int8 suffix (quantization disabled)
+            filename = f"{model_name}.tflite"
             tflite_file = self.tflite_dir / filename
             
             if not tflite_file.exists():
-                logger.error(f"❌ TFLite file not found: {tflite_file}")
+                logger.error(f"TFLite file not found: {tflite_file}")
                 return False
             
             # Get AVD name for filename
             avd_name = self.get_avd_name()
             if not avd_name:
-                logger.warning("⚠️ Could not get AVD name, using 'unknown_avd'")
+                logger.warning("Could not get AVD name, using 'unknown_avd'")
                 avd_name = "unknown_avd"
             
             # Get task from config and create task_modelName directory
@@ -810,13 +755,13 @@ class ContinuousProcessor:
             push_success = False
             
             for attempt in range(1, max_push_attempts + 1):
-                logger.info(f"📤 Pushing model to device: {filename} (attempt {attempt}/{max_push_attempts})")
+                logger.info(f"Pushing model to device: {filename} (attempt {attempt}/{max_push_attempts})")
                 push_result = self.run_adb(['push', str(tflite_file), f"{self.device_model_dir}/{filename}"], capture_output=True, text=True)
                 
                 if push_result.returncode != 0:
-                    logger.warning(f"⚠️ Push attempt {attempt} failed: {push_result.stderr}")
+                    logger.warning(f"Push attempt {attempt} failed: {push_result.stderr}")
                     if attempt < max_push_attempts:
-                        logger.info("⏳ Waiting 5 seconds before retry...")
+                        logger.info("Waiting 5 seconds before retry...")
                         time.sleep(5)
                     continue
                 
@@ -825,17 +770,17 @@ class ContinuousProcessor:
                 verify_result = self.run_adb(['shell', 'ls', '-la', f"{self.device_model_dir}/{filename}"], capture_output=True, text=True)
                 
                 if verify_result.returncode == 0 and filename in verify_result.stdout:
-                    logger.info("✅ Model pushed and verified successfully")
+                    logger.info("Model pushed and verified successfully")
                     push_success = True
                     break
                 else:
-                    logger.warning(f"⚠️ Verification attempt {attempt} failed - file not found on device")
+                    logger.warning(f"Verification attempt {attempt} failed - file not found on device")
                     if attempt < max_push_attempts:
-                        logger.info("⏳ Waiting 5 seconds before retry...")
+                        logger.info("Waiting 5 seconds before retry...")
                         time.sleep(5)
             
             if not push_success:
-                logger.error(f"❌ Failed to push model after {max_push_attempts} attempts")
+                logger.error(f"Failed to push model after {max_push_attempts} attempts")
                 return False
             
             # Stop previous instance
@@ -845,31 +790,27 @@ class ContinuousProcessor:
             device_model_path = f"{self.device_model_dir}/{filename}"
             pre_launch_check = self.run_adb(['shell', 'ls', device_model_path], capture_output=True, text=True)
             if pre_launch_check.returncode != 0:
-                logger.error("❌ Model file disappeared before launch! Re-pushing...")
+                logger.error("Model file disappeared before launch! Re-pushing...")
                 # Emergency re-push
                 self.run_adb(['push', str(tflite_file), device_model_path], capture_output=True, text=True)
                 time.sleep(2)  # Wait for file to stabilize
             
             # Launch benchmark
-            logger.info("🎯 Launching benchmark...")
+            logger.info("Launching benchmark...")
             launch_result = self.run_adb(['shell', 'am', 'start', '-n', f"{self.package_name}/.MainActivity", '--es', 'model_filename', filename], capture_output=True, text=True)
             
             if launch_result.returncode != 0:
-                logger.error(f"❌ Failed to launch benchmark: {launch_result.stderr}")
+                logger.error(f"Failed to launch benchmark: {launch_result.stderr}")
                 return False
             
-            logger.info("✅ Benchmark launched successfully")
+            logger.info("Benchmark launched successfully")
             
             # Wait for completion with polling
-            logger.info("⏳ Waiting for benchmark completion (polling)...")
+            logger.info("Waiting for benchmark completion (polling)...")
             
-            # The app saves the report to: /storage/emulated/0/Android/data/com.example.App/cache/<model_name>.json
-            # We can check if this file exists.
+            # The app writes its report to <device_report_dir>/<model_name>.json, in its external
+            # cache folder, which the adb shell can normally read.
             report_filename = filename.replace(".tflite", ".json")
-            # Note: device_report_dir is /storage/emulated/0/Android/data/com.example.App/cache
-            # But we need to be careful about permissions. run-as might be needed if it was internal storage, 
-            # but external cache should be visible to shell (sometimes).
-            # Actually, let's just try to 'ls' the file.
             
             max_wait = 300  # 5 minutes to allow for heavy models
             start_wait = time.time()
@@ -881,7 +822,7 @@ class ContinuousProcessor:
                 res = self.run_adb(check_cmd, capture_output=True, text=True)
                 
                 if res.returncode == 0 and report_filename in res.stdout:
-                    logger.info(f"✅ Benchmark finished in {time.time() - start_wait:.1f}s")
+                    logger.info(f"Benchmark finished in {time.time() - start_wait:.1f}s")
                     benchmark_done = True
                     break
                 
@@ -893,10 +834,10 @@ class ContinuousProcessor:
                 time.sleep(2)
                 
             if not benchmark_done:
-                logger.warning("⚠️ Benchmark timed out waiting for result file")
+                logger.warning("Benchmark timed out waiting for result file")
             
             # Collect device analytics before retrieving report
-            logger.info("📊 Collecting device analytics...")
+            logger.info("Collecting device analytics...")
             device_analytics = self.collect_device_analytics()
             
             # Retrieve report with new structure
@@ -950,26 +891,26 @@ class ContinuousProcessor:
                     with open(local_report, 'w') as f:
                         json.dump(ordered_data, f, indent=2)
                     
-                    logger.info("✅ Device analytics added to benchmark report")
+                    logger.info("Device analytics added to benchmark report")
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Could not enhance report with analytics: {e}")
+                    logger.warning(f"Could not enhance report with analytics: {e}")
             
             # Cleanup device
             self.run_adb(['shell', 'rm', f"{self.device_model_dir}/{filename}", device_report], capture_output=True)
             
             if pull_result.returncode == 0 and local_report.exists():
-                logger.info(f"✅ Benchmark completed and report retrieved: {model_name}")
-                logger.info(f"📁 Report saved to: {local_report}")
+                logger.info(f"Benchmark completed and report retrieved: {model_name}")
+                logger.info(f"Report saved to: {local_report}")
                 return True
             else:
-                logger.error(f"❌ Failed to retrieve benchmark report for {model_name}")
+                logger.error(f"Failed to retrieve benchmark report for {model_name}")
                 # Handle benchmark failure by waiting, closing, and restarting
                 self.handle_benchmark_failure(model_name)
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Benchmark execution error for {model_name}: {e}")
+            logger.error(f"Benchmark execution error for {model_name}: {e}")
             # Handle benchmark failure by waiting, closing, and restarting
             self.handle_benchmark_failure(model_name)
             return False
@@ -992,7 +933,7 @@ class ContinuousProcessor:
         # Get all models
         all_models = self.get_all_available_models()
         if not all_models:
-            logger.error("❌ No models found to process")
+            logger.error("No models found to process")
             return
         
         # Filter out already processed models
@@ -1005,33 +946,33 @@ class ContinuousProcessor:
         if last_model and last_model in remaining_models:
             remaining_models.remove(last_model)
             remaining_models.insert(0, last_model)
-            logger.info(f"🔄 Resuming from model: {last_model}")
+            logger.info(f"Resuming from model: {last_model}")
         
         if not remaining_models:
-            logger.info("✅ All models have been processed already!")
+            logger.info("All models have been processed already!")
             self.print_summary()
             return
         
-        logger.info(f"🚀 Starting continuous processing of {len(remaining_models)} models")
+        logger.info(f"Starting continuous processing of {len(remaining_models)} models")
         logger.info(f"   Remaining models: {', '.join(remaining_models)}")
         
         # Ensure emulator is running (using any available AVD)
         # Prefer a connected real device; fall back to emulator if needed
-        logger.info("🔎 Selecting target device (real device preferred)...")
+        logger.info("Selecting target device (real device preferred)...")
         has_device = self.select_target_device()
         if has_device and self.adb_serial and not str(self.adb_serial).startswith('emulator-'):
-            logger.info(f"✅ Using real device: {self.adb_serial}")
+            logger.info(f"Using real device: {self.adb_serial}")
         else:
-            logger.info("📱 No real device found or using emulator. Ensuring emulator is running...")
+            logger.info("No real device found or using emulator. Ensuring emulator is running...")
             if not self.ensure_emulator_running():
-                logger.error("❌ Cannot proceed without emulator or connected device")
+                logger.error("Cannot proceed without emulator or connected device")
                 return
             # re-select device after emulator startup
             self.select_target_device()
         
         # Install app once
         if not self.install_android_app():
-            logger.error("❌ App installation failed")
+            logger.error("App installation failed")
             return
         
         # Process each model
@@ -1041,24 +982,24 @@ class ContinuousProcessor:
             self.save_state()
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"🔄 Processing {idx}/{total_models}: {model_name}")
+            logger.info(f"Processing {idx}/{total_models}: {model_name}")
             logger.info(f"{'='*60}")
             
             
             # Step 1: Convert to TFLite
-            logger.info("🔄 Converting model to TFLite...")
+            logger.info("Converting model to TFLite...")
             if not self.convert_model(model_name):
-                logger.error(f"❌ Conversion failed for {model_name}")
+                logger.error(f"Conversion failed for {model_name}")
                 self.failed_models.append(model_name)
             else:
                 # Step 2: Run benchmark
-                logger.info("📊 Running benchmark on device...")
+                logger.info("Running benchmark on device...")
                 if not self.run_benchmark(model_name):
-                    logger.error(f"❌ Benchmark failed for {model_name}")
+                    logger.error(f"Benchmark failed for {model_name}")
                     self.failed_models.append(model_name)
                 else:
                     self.processed_models.append(model_name)
-                    logger.info(f"✅ Successfully processed {model_name}")
+                    logger.info(f"Successfully processed {model_name}")
             
             # Update state
             self.current_model = None
@@ -1068,14 +1009,14 @@ class ContinuousProcessor:
             if self.restart_every > 0:
                 self.models_since_restart += 1
                 if self.models_since_restart >= self.restart_every:
-                    logger.info(f"🔄 Processed {self.models_since_restart} models; restarting process to free memory...")
+                    logger.info(f"Processed {self.models_since_restart} models; restarting process to free memory...")
                     time.sleep(2)
                     # Gracefully restart by re-executing the script with the same arguments
                     os.execv(sys.executable, [sys.executable] + sys.argv)
             
             # Small delay between models
             if idx < total_models:
-                logger.info("⏳ Waiting 3 seconds before next model...")
+                logger.info("Waiting 3 seconds before next model...")
                 time.sleep(3)
         
         # Final summary
@@ -1085,36 +1026,36 @@ class ContinuousProcessor:
         if not self.failed_models and os.path.exists(self.state_file):
             try:
                 os.remove(self.state_file)
-                logger.info("🧹 Cleaned up state file")
+                logger.info("Cleaned up state file")
             except:
                 pass
     
     def print_summary(self):
-        """Print comprehensive summary"""
+        """Print a summary of the run"""
         total_attempted = len(self.processed_models) + len(self.failed_models)
         
         logger.info(f"\n{'='*70}")
-        logger.info("🎯 PROCESSING SUMMARY")
+        logger.info("PROCESSING SUMMARY")
         logger.info(f"{'='*70}")
-        logger.info(f"✅ Successfully processed: {len(self.processed_models)} models")
-        logger.info(f"❌ Failed: {len(self.failed_models)} models")
-        logger.info(f"📊 Total attempted: {total_attempted}")
+        logger.info(f"Successfully processed: {len(self.processed_models)} models")
+        logger.info(f"Failed: {len(self.failed_models)} models")
+        logger.info(f"Total attempted: {total_attempted}")
         
         if self.processed_models:
-            logger.info(f"\n✅ Successful models ({len(self.processed_models)}):")
+            logger.info(f"\nSuccessful models ({len(self.processed_models)}):")
             for i, model in enumerate(self.processed_models[:10], 1):
                 logger.info(f"   {i:2d}. {model}")
             if len(self.processed_models) > 10:
                 logger.info(f"   ... and {len(self.processed_models) - 10} more")
         
         if self.failed_models:
-            logger.info(f"\n❌ Failed models ({len(self.failed_models)}):")
+            logger.info(f"\nFailed models ({len(self.failed_models)}):")
             for i, model in enumerate(self.failed_models, 1):
                 logger.info(f"   {i:2d}. {model}")
-            logger.info("\n💡 You can rerun the script to retry failed models")
+            logger.info("\nYou can rerun the script to retry failed models")
         
-        logger.info(f"\n📁 Reports saved to: {self.reports_dir.absolute()}")
-        logger.info(f"📁 Models saved to: {self.tflite_dir.absolute()}")
+        logger.info(f"\nReports saved to: {self.reports_dir.absolute()}")
+        logger.info(f"Models saved to: {self.tflite_dir.absolute()}")
 
 def main():
     """Main entry point with error handling"""
@@ -1123,14 +1064,14 @@ def main():
     try:
         processor.process_models_continuously()
     except KeyboardInterrupt:
-        logger.info("\n⚠️  Processing interrupted by user")
+        logger.info("\nProcessing interrupted by user")
         processor.save_state()
-        logger.info("💾 Progress saved. Run the script again to resume.")
+        logger.info("Progress saved. Run the script again to resume.")
     except Exception as e:
-        logger.error(f"\n💥 Unexpected error: {e}")
-        logger.error(f"📝 Stack trace: {traceback.format_exc()}")
+        logger.error(f"\nUnexpected error: {e}")
+        logger.error(f"Stack trace: {traceback.format_exc()}")
         processor.save_state()
-        logger.info("💾 State saved for recovery")
+        logger.info("State saved for recovery")
 
 if __name__ == "__main__":
     main()
