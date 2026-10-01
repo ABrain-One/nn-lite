@@ -2,7 +2,7 @@
 
 All notable changes to NN-Lite are documented in this file.
 
-## [1.0.1] - Unreleased
+## [1.0.1] - 2026-10-01
 
 ### Changed
 - `benchmark_model` is pinned with `taskset` to all CPU cores except the slowest cluster,
