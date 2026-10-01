@@ -4,35 +4,25 @@ All notable changes to NN-Lite are documented in this file.
 
 ## [1.0.1] - Unreleased
 
-### Fixed
-- Latencies are read from the timed runs of `benchmark_model`. The parser took the first
-  statistics in the output, which are those of the warm-up phase, for every model whose
-  warm-up had more than one run.
-- Averages of one second or more, which `benchmark_model` prints in scientific notation
-  (e.g. `avg=1.29563e+06`), were read as about one microsecond, which could also make a
-  backend wrongly appear as the fastest.
-- Every backend now performs exactly `--android-runs` timed runs (`--min_secs=0
-  --max_secs=3600`); by default `benchmark_model` repeated a model until one second had
-  passed and stopped after 150 seconds, so the number of runs varied with the model.
-- Incomplete or unreadable `benchmark_model` output is reported as a failed backend with its
-  full output in the error log, instead of being stored as a plausible record.
-- `benchmark_model` runs on the fast cores (`taskset`, all cores except the slowest group)
-  for every backend. Unpinned, Android often ran it on the slow cores: AirNet FP32 on the
-  CPU took 184–225 ms on a Galaxy A55 instead of 27–30 ms on its fast cores, and
-  279–320 ms instead of 191–196 ms on a Huawei Y9 Prime.
-- The error output (stderr) of `benchmark_model` was discarded, so `cpu_error`, `gpu_error`,
-  `npu_error` and the error log never contained its error messages; the stored message was
-  made of its progress lines (e.g. `INFO: NNAPI delegate created.`). Its error output and
-  exit status are now kept, `INFO:` lines are no longer taken as errors, and a crash is
-  reported as such (e.g. `benchmark_model crashed (SIGSEGV)`).
+### Changed
+- `benchmark_model` is pinned with `taskset` to all CPU cores except the slowest cluster,
+  for every backend, which makes latencies more repeatable on phones with cores of
+  different speeds.
+- Each backend performs exactly `--android-runs` timed runs (`--min_secs=0
+  --max_secs=3600`) instead of following the duration limits of `benchmark_model`.
 - A backend counts as failed when `benchmark_model` exits with an error or prints no
-  statistics for the timed runs, not because of an `ERROR:` line: the GPU delegate reports
-  the operations it leaves to the CPU as errors although the model runs.
+  statistics for the timed runs.
 - `--android-runs` must be 1 or more.
 
+### Fixed
+- Latency statistics are read from the timed runs only, not from the warm-up phase.
+- Averages printed in scientific notation (e.g. `avg=1.29563e+06`) are parsed correctly.
+- The error output of `benchmark_model` is kept, so error messages and crashes are recorded;
+  progress (`INFO:`) lines are no longer reported as errors.
+- Incomplete or unreadable `benchmark_model` output is reported as a failed backend.
+
 ### Added
-- `cpu_runs`, `gpu_runs` and `npu_runs` in each record: the number of timed runs actually
-  performed, next to the requested `iterations`.
+- `cpu_runs`, `gpu_runs` and `npu_runs` in each record: the number of timed runs performed.
 
 ### Removed
 - `ab/lite/data_loader.py`, which nothing used.
