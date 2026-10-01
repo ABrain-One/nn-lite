@@ -16,10 +16,19 @@ def _count(text):
     return value
 
 
+def _positive(text):
+    """A whole number of 1 or more."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be 1 or more, not {value}")
+    return value
+
+
 def parser():
     """The argument parser of nn-lite-bench."""
     ap = argparse.ArgumentParser()
-    ap.add_argument("--android-runs", type=int, default=20)
+    ap.add_argument("--android-runs", type=_positive, default=20, metavar="N",
+                    help="Timed runs of each model on each backend (default: 20)")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--reinstall-bench", action="store_true",
                     help="Force re-push of benchmark_model binary to device")

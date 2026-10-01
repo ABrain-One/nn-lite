@@ -15,22 +15,41 @@ ERROR_KEYWORDS = (
 )
 
 
-def extract_error_from_output(out: str) -> str:
-    """Pull the real error message out of benchmark_model's stdout/stderr."""
-    if not out or not out.strip():
-        return "no output from benchmark_model"
+# Printed after benchmark_model has run, with its exit status (see run_bench in torch2tflite.py).
+EXIT_STATUS = "benchmark_model exit status: "
+# Signals that end benchmark_model, as numbered on Android (Linux); the shell reports 128 + number.
+SIGNALS = {4: "SIGILL", 6: "SIGABRT", 7: "SIGBUS", 9: "SIGKILL, e.g. out of memory", 11: "SIGSEGV"}
 
-    error_lines = []
-    for line in out.splitlines():
-        line = line.strip()
-        if line and any(kw in line for kw in ERROR_KEYWORDS):
-            error_lines.append(line)
+
+def exit_status(out: str):
+    """The exit status of benchmark_model printed in ``out``, or None if it is not there."""
+    match = re.search(rf"^{EXIT_STATUS}(\d+)\s*$", out or "", re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def extract_error_from_output(out: str) -> str:
+    """Pull the real error message out of benchmark_model's output (stdout and stderr).
+
+    Lines marked ``INFO:`` are never taken as errors, even with a keyword such as "NNAPI"
+    in them. If benchmark_model crashed, the message says so.
+    """
+    status = exit_status(out)
+    lines = [ln.strip() for ln in (out or "").splitlines()
+             if ln.strip() and not ln.startswith(EXIT_STATUS)]
+    error_lines = [ln for ln in lines
+                   if not ln.startswith("INFO:") and any(kw in ln for kw in ERROR_KEYWORDS)]
 
     if error_lines:
         msg = " | ".join(error_lines[:3])
+    elif lines:
+        msg = lines[-1]
     else:
-        nonempty = [ln.strip() for ln in out.splitlines() if ln.strip()]
-        msg = nonempty[-1] if nonempty else "no output"
+        msg = "no output from benchmark_model"
+    if status is not None and status > 128:
+        signal = SIGNALS.get(status - 128, f"signal {status - 128}")
+        msg = f"benchmark_model crashed ({signal}); " + ("" if error_lines else "last output: ") + msg
+    elif status and not error_lines:
+        msg = f"benchmark_model exited with status {status}; last output: {msg}"
 
     if len(msg) > 500:
         msg = msg[:497] + "..."
@@ -38,8 +57,12 @@ def extract_error_from_output(out: str) -> str:
 
 
 def benchmark_failed(out: str) -> bool:
-    """True if benchmark_model reported an error or printed no statistics for the timed runs."""
-    return "ERROR:" in out or "Failed to compute" in out or _timed_block(out) is None
+    """True if benchmark_model exited with an error or printed no statistics for the timed runs.
+
+    ``ERROR:`` lines alone do not mean that it failed: the GPU delegate, for example, lists
+    the operations it leaves to the CPU as errors, and the model then still runs.
+    """
+    return bool(exit_status(out)) or _timed_block(out) is None
 
 
 def failed_result(error: str) -> dict:

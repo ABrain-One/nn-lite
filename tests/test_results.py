@@ -7,8 +7,10 @@ import json
 import pytest
 
 from ab.lite.results import (
+    EXIT_STATUS,
     benchmark_failed,
     build_record,
+    exit_status,
     extract_error_from_output,
     failed_result,
     parse_benchmark_output,
@@ -37,6 +39,19 @@ INFO: Created TensorFlow Lite delegate for GPU.
 ERROR: Following operations are not supported by GPU delegate:
 ERROR: Failed to apply GPU delegate.
 Benchmarking failed.
+"""
+
+# Real output of the bundled binary on a Galaxy A55 whose NNAPI driver could not run an INT8
+# model: the output ends after the delegate was created, without any error line.
+NNAPI_STOPPED_OUTPUT = """\
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [20]
+INFO: Graph: [/data/local/tmp/nn_lite_int8.tflite]
+INFO: Use NNAPI: [1]
+INFO: NNAPI accelerators available: [enn,nnapi-reference]
+INFO: Loaded model /data/local/tmp/nn_lite_int8.tflite
+INFO: NNAPI delegate created.
 """
 
 MEMORY = {"total_ram_kb": 11631760, "free_ram_kb": 2818008, "available_ram_kb": 5356556, "cached_kb": 4672460}
@@ -185,6 +200,43 @@ def test_extract_error_is_truncated():
     msg = extract_error_from_output("ERROR: " + "x" * 1000)
     assert len(msg) == 500
     assert msg.endswith("...")
+
+
+def test_extract_error_ignores_info_lines_with_error_keywords():
+    # "NNAPI" is an error keyword, but these lines only report progress.
+    assert extract_error_from_output(NNAPI_STOPPED_OUTPUT) == "INFO: NNAPI delegate created."
+    out = NNAPI_STOPPED_OUTPUT + "ERROR: NN API returned error ANEURALNETWORKS_OP_FAILED at line 1234.\n"
+    assert extract_error_from_output(out) == "ERROR: NN API returned error ANEURALNETWORKS_OP_FAILED at line 1234."
+
+
+def test_extract_error_reports_a_crash():
+    out = NNAPI_STOPPED_OUTPUT + EXIT_STATUS + "139\n"
+    assert exit_status(out) == 139
+    assert benchmark_failed(out)
+    assert extract_error_from_output(out) == (
+        "benchmark_model crashed (SIGSEGV); last output: INFO: NNAPI delegate created.")
+    out = NNAPI_STOPPED_OUTPUT + "ERROR: out of memory\n" + EXIT_STATUS + "137\n"
+    assert extract_error_from_output(out) == "benchmark_model crashed (SIGKILL, e.g. out of memory); ERROR: out of memory"
+
+
+def test_extract_error_reports_the_exit_status_without_error_lines():
+    out = "INFO: STARTING!\nsomething odd happened\n" + EXIT_STATUS + "1\n"
+    assert extract_error_from_output(out) == "benchmark_model exited with status 1; last output: something odd happened"
+    out = GPU_FAIL_OUTPUT + EXIT_STATUS + "1\n"
+    assert extract_error_from_output(out) == extract_error_from_output(GPU_FAIL_OUTPUT)
+
+
+def test_benchmark_failed_uses_the_exit_status():
+    # The GPU delegate lists the operations it leaves to the CPU as errors; the model still runs.
+    partly_on_gpu = ("INFO: Created TensorFlow Lite delegate for GPU.\n"
+                     "ERROR: Following operations are not supported by GPU delegate:\n"
+                     "CONCATENATION: OP is supported, but tensor type/shape isn't compatible.\n"
+                     "70 operations will run on the GPU, and the remaining 4 operations will run on the CPU.\n"
+                     + OK_OUTPUT + EXIT_STATUS + "0\n")
+    assert not benchmark_failed(partly_on_gpu)
+    assert parse_benchmark_output(partly_on_gpu)["avg"] == 31118.1 * 1000
+    assert benchmark_failed(OK_OUTPUT + EXIT_STATUS + "1\n")
+    assert exit_status(OK_OUTPUT) is None and not benchmark_failed(OK_OUTPUT)
 
 
 # --- records -------------------------------------------------------------

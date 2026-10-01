@@ -61,7 +61,7 @@ def set_results_root(root):
 
 try:
     from ab.lite.results import (extract_error_from_output, benchmark_failed, failed_result,
-                                 parse_benchmark_output, build_record)
+                                 parse_benchmark_output, build_record, EXIT_STATUS)
     from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from ab.lite.progress import progress_file, load_progress, save_progress
     from ab.lite.sources import find_checkout, CheckoutSource, PackageSource
@@ -71,7 +71,7 @@ try:
     from ab.lite.options import parser, restart_args
 except ImportError:  # executed as a plain script, e.g. after a session restart
     from results import (extract_error_from_output, benchmark_failed, failed_result,
-                         parse_benchmark_output, build_record)
+                         parse_benchmark_output, build_record, EXIT_STATUS)
     from preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from progress import progress_file, load_progress, save_progress
     from sources import find_checkout, CheckoutSource, PackageSource
@@ -219,7 +219,9 @@ def run_bench(model_path, backend, runs, log_path=None, model_name=None, mode=No
     cmd = (f"{f'taskset {affinity} ' if affinity else ''}"
            f"/data/local/tmp/benchmark_model --graph={model_path} --num_runs={runs} "
            f"--min_secs=0 --max_secs={MAX_BENCH_SECS} {flag}")
-    out = adb_shell(cmd)
+    # benchmark_model writes its errors to stderr, which adb keeps apart from the output, and
+    # a crash shows only in its exit status: both are added to the output.
+    out = adb_shell(f'{cmd} 2>&1; echo "{EXIT_STATUS}$?"')
 
     if not benchmark_failed(out):
         try:
