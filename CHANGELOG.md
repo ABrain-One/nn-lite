@@ -10,6 +10,9 @@ All notable changes to NN-Lite are documented in this file.
   on the fast ones. Its summary (`arm_architecture`) now describes the core `benchmark_model`
   runs on; it described whichever core `/proc/cpuinfo` listed last. The emulator path lists
   every core too, and summarises the first one.
+- The package requires Python 3.10 to 3.13. The pinned LiteRT runtime (`ai-edge-litert` 2.1.2)
+  publishes no packages for Python 3.14, so installing on 3.14 failed with an error about that
+  package instead of about the Python version. The unit tests now also run on Python 3.13.
 
 ## [1.0.1] - 2026-10-01
 
