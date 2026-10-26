@@ -183,23 +183,12 @@ def get_android_memory():
             if key in mapping: mem[mapping[key]] = int(parts[1].strip().split()[0])
     return mem
 
-def get_device_analytics():
-    raw = adb_shell("cat /proc/cpuinfo")
-    processors = []; current = {}
-    global_meta = {"hardware": "", "features": "", "cpu implementer": "", "cpu architecture": "", "cpu variant": "", "cpu part": "", "cpu revision": ""}
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            if current: processors.append(current); current = {}
-            continue
-        if ":" in line: 
-            k, v = line.split(":", 1); k, v = k.strip().lower(), v.strip()
-            if k == "processor" and v.isdigit(): current["processor"] = v
-            elif k in global_meta: global_meta[k] = v; current[k] = v
-            else: current[k] = v
-    if current: processors.append(current)
+def get_device_analytics(affinity=None):
+    """CPU description of the phone: every core, and a summary of the core benchmark_model
+    runs on (the first core of the taskset mask ``affinity``, or the first core)."""
     soc = adb_getprop("ro.soc.model") or adb_getprop("ro.board.platform")
-    return {"timestamp": time.time(), "cpu_info": {"cpu_cores": len([p for p in processors if 'processor' in p]), "processors": processors[:4], "arm_architecture": {"hardware": global_meta["hardware"] or soc, "features": global_meta["features"], "cpu_implementer": global_meta["cpu implementer"], "cpu_architecture": global_meta["cpu architecture"], "cpu_variant": global_meta["cpu variant"], "cpu_part": global_meta["cpu part"], "cpu_revision": global_meta["cpu revision"]}}}
+    return {"timestamp": time.time(),
+            "cpu_info": adb.cpu_info(adb_shell("cat /proc/cpuinfo"), soc, adb.first_core(affinity))}
 
 # --- BENCHMARK ---
 def fast_cores():
@@ -446,7 +435,7 @@ def main():
                 memory = get_android_memory()
                 final_data = build_record(name, device_model, os_ver, args.android_runs,
                                           {"cpu": c, "gpu": g, "npu": n}, memory, shape,
-                                          get_device_analytics())
+                                          get_device_analytics(affinity))
                 if not final_data["valid"]:
                     print(f"   [INVALID] {mode.upper()}: all backends failed, marking valid=false")
 

@@ -2,6 +2,15 @@
 
 All notable changes to NN-Lite are documented in this file.
 
+## [1.0.2] - Unreleased
+
+### Fixed
+- `device_analytics` lists every core of the phone. It listed only the first four, which on
+  a phone with four slow and four fast cores are the slow ones, while `benchmark_model` runs
+  on the fast ones. Its summary (`arm_architecture`) now describes the core `benchmark_model`
+  runs on; it described whichever core `/proc/cpuinfo` listed last. The emulator path lists
+  every core too, and summarises the first one.
+
 ## [1.0.1] - 2026-10-01
 
 ### Changed

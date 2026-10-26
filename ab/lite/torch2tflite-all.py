@@ -202,8 +202,11 @@ class ContinuousProcessor:
                         key_clean = key.strip().lower()
                         current_cpu[key_clean] = value.strip()
                         
-                        # Capture ARM-specific fields (case-insensitive)
+                        # Capture ARM-specific fields (case-insensitive). The core fields
+                        # describe the first core: on phones with fast and slow cores they differ.
                         key_lower = key.strip().lower()
+                        if arm_architecture.get(key_lower.replace(" ", "_")):
+                            continue
                         if key_lower == "processor" and ("aarch64" in value or "arm" in value.lower()):
                             arm_architecture["processor_architecture"] = value.strip()
                         elif key_lower == "hardware":
@@ -229,7 +232,7 @@ class ContinuousProcessor:
                 
                 analytics["cpu_info"] = {
                     "cpu_cores": cpu_cores,
-                    "processors": processor_info[:4] if processor_info else [],
+                    "processors": processor_info,
                     "arm_architecture": arm_data
                 }
 
