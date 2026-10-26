@@ -94,6 +94,45 @@ def fast_cores_mask(speeds):
     return format(sum(1 << core for core, khz in speeds.items() if khz > slowest), "x")
 
 
+# Fields of /proc/cpuinfo that describe one core, and their names in the record's summary.
+CORE_FIELDS = {"features": "features", "cpu implementer": "cpu_implementer",
+               "cpu architecture": "cpu_architecture", "cpu variant": "cpu_variant",
+               "cpu part": "cpu_part", "cpu revision": "cpu_revision"}
+
+
+def first_core(mask):
+    """The lowest core in a hexadecimal ``taskset`` mask, or None without a mask."""
+    if not mask:
+        return None
+    value = int(mask, 16)
+    return (value & -value).bit_length() - 1 if value else None
+
+
+def cpu_info(output, soc="", core=None):
+    """The ``cpu_info`` of a record from the output of ``cat /proc/cpuinfo``.
+
+    ``processors`` lists every core. The summary (``arm_architecture``) describes ``core``,
+    the core benchmark_model runs on, or the first core if it is not given or not listed:
+    on a phone with fast and slow cores the cores differ, so one summary cannot describe
+    them all. ``soc`` is used when /proc/cpuinfo names no hardware.
+    """
+    processors, hardware, block = [], "", {}
+    for line in output.splitlines() + [""]:
+        if ":" in line:
+            key, value = line.split(":", 1)
+            block[key.strip().lower()] = value.strip()
+        elif not line.strip() and block:
+            # A block without a core number holds lines for the whole chip, such as Hardware.
+            if block.get("processor", "").isdigit():
+                processors.append(block)
+            hardware = block.get("hardware", hardware)
+            block = {}
+    chosen = next((p for p in processors if p["processor"] == str(core)), processors[0] if processors else {})
+    summary = {"hardware": hardware or soc}
+    summary.update({name: chosen.get(field, "") for field, name in CORE_FIELDS.items()})
+    return {"cpu_cores": len(processors), "processors": processors, "arm_architecture": summary}
+
+
 def folder_name(serial):
     """``serial`` made safe for use in a file name (serials of phones on Wi-Fi contain ':')."""
     return re.sub(r"[^A-Za-z0-9._-]+", "_", serial)

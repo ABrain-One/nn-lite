@@ -90,3 +90,43 @@ def test_core_speeds_reads_each_core():
 ])
 def test_fast_cores_mask_leaves_out_the_slowest_cores(speeds, mask):
     assert adb.fast_cores_mask(speeds) == mask
+
+
+# /proc/cpuinfo of a phone with four slow (Cortex-A53) and four fast (Cortex-A73) cores,
+# shortened: the real file has more lines per core.
+BIG_LITTLE_CPUINFO = "\n".join(
+    f"processor\t: {c}\nBogoMIPS\t: 52.00\nFeatures\t: fp asimd\nCPU implementer\t: 0x41\n"
+    f"CPU architecture: 8\nCPU variant\t: 0x{'0' if c < 4 else '1'}\n"
+    f"CPU part\t: {'0xd03' if c < 4 else '0xd09'}\nCPU revision\t: 4\n"
+    for c in range(8)) + "\nHardware\t: Exynos 9611\n"
+
+
+def test_cpu_info_lists_every_core():
+    info = adb.cpu_info(BIG_LITTLE_CPUINFO)
+    assert info["cpu_cores"] == 8
+    assert [p["processor"] for p in info["processors"]] == [str(c) for c in range(8)]
+    assert [p["cpu part"] for p in info["processors"]] == ["0xd03"] * 4 + ["0xd09"] * 4
+    assert info["arm_architecture"]["hardware"] == "Exynos 9611"  # not listed as a core
+
+
+def test_cpu_info_summarises_the_core_benchmark_model_runs_on():
+    # Pinned to the fast cores (taskset f0): the summary describes core 4, a Cortex-A73.
+    pinned = adb.cpu_info(BIG_LITTLE_CPUINFO, core=adb.first_core("f0"))["arm_architecture"]
+    assert (pinned["cpu_part"], pinned["cpu_variant"]) == ("0xd09", "0x1")
+    # Not pinned: the first core, whatever core was read last.
+    unpinned = adb.cpu_info(BIG_LITTLE_CPUINFO)["arm_architecture"]
+    assert unpinned["cpu_part"] == "0xd03"
+    assert list(unpinned) == ["hardware", "features", "cpu_implementer", "cpu_architecture",
+                              "cpu_variant", "cpu_part", "cpu_revision"]  # published key order
+
+
+def test_cpu_info_without_hardware_line_or_cores():
+    assert adb.cpu_info("processor\t: 0\nCPU part\t: 0xd44\n", soc="SM8350")["arm_architecture"]["hardware"] == "SM8350"
+    assert adb.cpu_info("", soc="x") == {"cpu_cores": 0, "processors": [], "arm_architecture": {
+        "hardware": "x", "features": "", "cpu_implementer": "", "cpu_architecture": "",
+        "cpu_variant": "", "cpu_part": "", "cpu_revision": ""}}
+
+
+@pytest.mark.parametrize("mask, core", [("f0", 4), ("c0", 6), ("fe", 1), ("1", 0), (None, None), ("0", None)])
+def test_first_core_of_a_taskset_mask(mask, core):
+    assert adb.first_core(mask) == core
