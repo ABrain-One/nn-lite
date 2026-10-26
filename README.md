@@ -22,7 +22,8 @@ failures instead of skipping them. An optional emulator path (Android Studio) is
 
 ## Requirements
 
-- Linux (tested on Ubuntu) or macOS on Apple Silicon, with Python 3.10 or newer
+- Linux (tested on Ubuntu) or macOS on Apple Silicon, with Python 3.10 to 3.13 (the pinned LiteRT
+  runtime, `ai-edge-litert` 2.1.2, publishes no packages for Python 3.14 or newer)
 - `adb` (Android platform tools): `sudo apt install adb` on Linux, `brew install --cask android-platform-tools`
   on macOS, or the [SDK platform tools](https://developer.android.com/tools/releases/platform-tools)
 - An Android phone with USB debugging enabled (see [Connect a phone](#connect-a-phone)); no root is needed
