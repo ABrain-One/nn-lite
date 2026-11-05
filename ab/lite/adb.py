@@ -100,6 +100,74 @@ CORE_FIELDS = {"features": "features", "cpu implementer": "cpu_implementer",
                "cpu part": "cpu_part", "cpu revision": "cpu_revision"}
 
 
+# Prints the state of the phone that changes how fast it runs: Battery Saver, as Android's
+# power manager reports it ("power_save_mode"), as the standard setting ("low_power") and as
+# MIUI's own Battery Saver and Ultra Battery Saver settings, which Xiaomi phones use instead,
+# and EMUI's power mode (1 normal, 4 power saving, 5 performance) and Ultra power saving flag,
+# which Huawei phones use;
+# one line per core with its frequency governor and its current and maximum allowed frequency
+# in kHz, and the number of threads of the Android compiler (dex2oat), which Android runs in the
+# background while a phone is idle and charging. The brackets keep grep from finding itself.
+DEVICE_STATE_COMMAND = (
+    'echo "power_save_mode $(dumpsys power 2>/dev/null | grep -m1 mIsPowerSaveModeEnabled | sed "s/.*: *//")"; '
+    'echo "low_power $(settings get global low_power)"; '
+    'echo "miui_power_save $(settings get system POWER_SAVE_MODE_OPEN) '
+    '$(settings get system power_supersave_mode_open)"; '
+    'echo "emui_power_mode $(settings get system SmartModeStatus) $(getprop sys.super_power_save)"; '
+    'for c in /sys/devices/system/cpu/cpu[0-9]*; do f=$c/cpufreq; '
+    'echo "core ${c##*cpu} $(cat $f/scaling_governor $f/scaling_cur_freq $f/scaling_max_freq 2>/dev/null | tr "\\n" " ")"; done; '
+    'echo "compiler_threads $(ps -A -T -o CMD 2>/dev/null | grep -cE "[d]ex2oat|[C]ompiler driver")"')
+
+
+def device_state(output):
+    """The power and load state of the phone from the output of ``DEVICE_STATE_COMMAND``.
+
+    ``battery_saver`` is True if any of the sources says Battery Saver is on, False if the
+    sources that answered all say it is off, and None if none answered. ``performance_mode``
+    is True or False on phones that report it (Huawei), otherwise None. ``cores`` maps each
+    core to its governor and its current and maximum allowed frequency (kHz), read while the
+    phone is idle just before a measurement; ``compiler_threads`` is the number of threads of
+    the Android compiler, or None if it could not be counted.
+    """
+    state = {"battery_saver": None, "performance_mode": None, "compiler_threads": None, "cores": {}}
+    flag = {"1": True, "0": False, "true": True, "false": False}
+    saver = []
+    for line in output.splitlines():
+        parts = line.split()
+        if parts[:1] in (["power_save_mode"], ["low_power"], ["miui_power_save"]):
+            saver += [flag[v] for v in parts[1:] if v in flag]
+        elif parts[:1] == ["emui_power_mode"] and len(parts) >= 2 and parts[1].isdigit():
+            saver.append(parts[1] == "4")
+            state["performance_mode"] = parts[1] == "5"
+            if parts[2:] == ["true"]:  # Ultra power saving leaves the power mode at 1
+                saver.append(True)
+        elif parts[:1] == ["compiler_threads"] and len(parts) == 2 and parts[1].isdigit():
+            state["compiler_threads"] = int(parts[1])
+        elif parts[:1] == ["core"] and len(parts) >= 2 and parts[1].isdigit():
+            governor, *freqs = parts[2:5] + [None] * (3 - len(parts[2:5]))
+            to_khz = lambda v: int(v) if v and v.isdigit() else None
+            state["cores"][parts[1]] = {"governor": governor, "cur_freq_khz": to_khz(freqs[0]),
+                                        "max_freq_khz": to_khz(freqs[1])}
+    state["battery_saver"] = any(saver) if saver else None
+    return state
+
+
+def state_warnings(state):
+    """Warnings about a device state that slows down or disturbs the measurements."""
+    warnings = []
+    if state.get("battery_saver"):
+        warnings.append("Battery Saver is on: it can slow the phone down, so latencies may be "
+                        "higher than with it off. Turn it off for measurements comparable across phones")
+    if state.get("performance_mode"):
+        warnings.append("Performance mode is on: latencies may be lower than in the phone's "
+                        "default mode, so they are not comparable with phones measured without it")
+    if state.get("compiler_threads"):
+        warnings.append(f"the Android compiler (dex2oat) is running in the background "
+                        f"({state['compiler_threads']} threads); it competes for memory and cache. "
+                        "Waiting until it has finished gives more reliable measurements")
+    return warnings
+
+
 def first_core(mask):
     """The lowest core in a hexadecimal ``taskset`` mask, or None without a mask."""
     if not mask:

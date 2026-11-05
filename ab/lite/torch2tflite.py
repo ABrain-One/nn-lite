@@ -183,12 +183,24 @@ def get_android_memory():
             if key in mapping: mem[mapping[key]] = int(parts[1].strip().split()[0])
     return mem
 
-def get_device_analytics(affinity=None):
+def get_device_state():
+    """Battery Saver, CPU frequencies and background compilation on the phone (see adb.device_state)."""
+    return adb.device_state(adb_shell(adb.DEVICE_STATE_COMMAND))
+
+def warn_about(state, indent=""):
+    for w in adb.state_warnings(state):
+        print(f"{indent}[WARN] {w}")
+
+def get_device_analytics(affinity=None, state=None):
     """CPU description of the phone: every core, and a summary of the core benchmark_model
-    runs on (the first core of the taskset mask ``affinity``, or the first core)."""
+    runs on (the first core of the taskset mask ``affinity``, or the first core), and the
+    device ``state`` read just before the model was benchmarked."""
     soc = adb_getprop("ro.soc.model") or adb_getprop("ro.board.platform")
-    return {"timestamp": time.time(),
-            "cpu_info": adb.cpu_info(adb_shell("cat /proc/cpuinfo"), soc, adb.first_core(affinity))}
+    analytics = {"timestamp": time.time(),
+                 "cpu_info": adb.cpu_info(adb_shell("cat /proc/cpuinfo"), soc, adb.first_core(affinity))}
+    if state is not None:
+        analytics["device_state"] = state
+    return analytics
 
 # --- BENCHMARK ---
 def fast_cores():
@@ -294,6 +306,7 @@ def main():
     else:
         print("[SETUP] benchmark_model runs on any core: the cores are equally fast, "
               "their speed is unknown or taskset is missing")
+    warn_about(get_device_state())
 
     device_model = adb_getprop("ro.product.model")
     device_clean = device_model.replace(" ", "_")
@@ -426,7 +439,9 @@ def main():
                 # contain spaces or shell characters, and the path is used in shell commands.
                 dev_p = f"/data/local/tmp/nn_lite_{mode}.tflite"
                 push_model(tflite_path, dev_p)
-                
+                phone_state = get_device_state()  # the state the model is measured in
+                warn_about(phone_state, "   ")
+
                 c = run_bench(dev_p, "cpu", args.android_runs, log_path=error_log, model_name=name, mode=mode, affinity=affinity)
                 g = run_bench(dev_p, "gpu", args.android_runs, log_path=error_log, model_name=name, mode=mode, affinity=affinity)
                 n = run_bench(dev_p, "npu", args.android_runs, log_path=error_log, model_name=name, mode=mode, affinity=affinity)
@@ -435,7 +450,7 @@ def main():
                 memory = get_android_memory()
                 final_data = build_record(name, device_model, os_ver, args.android_runs,
                                           {"cpu": c, "gpu": g, "npu": n}, memory, shape,
-                                          get_device_analytics(affinity))
+                                          get_device_analytics(affinity, phone_state))
                 if not final_data["valid"]:
                     print(f"   [INVALID] {mode.upper()}: all backends failed, marking valid=false")
 

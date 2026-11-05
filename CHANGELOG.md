@@ -4,6 +4,15 @@ All notable changes to NN-Lite are documented in this file.
 
 ## [1.0.2] - Unreleased
 
+### Added
+- `device_analytics.device_state` in each record: whether Battery Saver was on (the Android
+  setting, or the own power modes of Xiaomi/MIUI and Huawei/EMUI phones), whether performance
+  mode was on, the frequency
+  governor and current and maximum allowed frequency of every core, and the number of threads
+  of the Android compiler (dex2oat) running in the background, read just before the model is
+  benchmarked. NN-Lite warns at start-up and for each model when Battery Saver or performance
+  mode is on or the compiler is running; it does not change the phone's settings.
+
 ### Fixed
 - `device_analytics` lists every core of the phone. It listed only the first four, which on
   a phone with four slow and four fast cores are the slow ones, while `benchmark_model` runs
