@@ -138,6 +138,28 @@ def _build(module):
                          f"{module.__file__} to build the network") from e
 
 
+def load_weights(network, state_dict):
+    """Load ``state_dict`` into ``network``, or raise a ValueError if they do not match.
+
+    Every parameter and buffer of the network must be in the checkpoint and every entry of the
+    checkpoint must belong to the network, so that a model whose definition and checkpoint
+    differ is never benchmarked with some layers left at their initial values.
+    """
+    missing, unexpected = network.load_state_dict(state_dict, strict=False)
+    if missing or unexpected:
+        raise ValueError(mismatch_message(missing, unexpected))
+
+
+def mismatch_message(missing, unexpected, shown=3):
+    """Describe the keys that differ between a model and its checkpoint."""
+    n = lambda keys: f"{len(keys)} weight{'s' if len(keys) != 1 else ''}"
+    parts = [f"{n(keys)} {what(len(keys) != 1)} (e.g. {', '.join(keys[:shown])})"
+             for keys, what in ((missing, lambda many: f"of the model {'are' if many else 'is'} missing from the checkpoint"),
+                                (unexpected, lambda many: f"in the checkpoint {'do' if many else 'does'} not belong to the model"))
+             if keys]
+    return "the checkpoint does not match the model: " + "; ".join(parts)
+
+
 def _state_dict(checkpoint):
     if isinstance(checkpoint, dict):
         for key in ("state_dict", "model_state_dict", "model"):
@@ -177,7 +199,7 @@ def load_local_model(model, input_size=224):
         network = checkpoint
     else:
         network = _build(module)
-        network.load_state_dict(_state_dict(checkpoint))
+        load_weights(network, _state_dict(checkpoint))
     return network.eval(), (1, 3, input_size, input_size), getattr(module, "input_transform", None)
 
 
