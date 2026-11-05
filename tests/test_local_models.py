@@ -187,3 +187,23 @@ def test_whole_models_from_different_scripts_with_the_same_class_name(tmp_path):
     for name, width in (("first", 4), ("second", 6)):
         loaded, shape, _ = load_local_model(models[name], 32)
         assert loaded(torch.randn(*shape)).shape == (1, width)
+
+
+def test_mismatch_message_names_the_keys():
+    from ab.lite.local_models import mismatch_message
+    msg = mismatch_message(["fc.weight", "fc.bias"], ["head.weight"])
+    assert msg == ("the checkpoint does not match the model: 2 weights of the model are missing from the "
+                   "checkpoint (e.g. fc.weight, fc.bias); 1 weight in the checkpoint does not belong to the "
+                   "model (e.g. head.weight)")
+
+
+def test_load_weights_rejects_a_checkpoint_that_does_not_match(tmp_path):
+    torch = pytest.importorskip("torch")
+    from ab.lite.local_models import load_weights
+    net = torch.nn.Sequential(torch.nn.Conv2d(3, 8, 3), torch.nn.Linear(8, 10))
+    load_weights(net, net.state_dict())  # an exact match loads
+    partial = {k: v for k, v in net.state_dict().items() if not k.startswith("1.")}
+    with pytest.raises(ValueError, match="2 weights of the model are missing"):
+        load_weights(net, partial)
+    with pytest.raises(ValueError, match="1 weight in the checkpoint does not belong"):
+        load_weights(net, {**net.state_dict(), "extra.weight": torch.zeros(1)})

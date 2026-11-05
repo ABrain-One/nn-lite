@@ -14,6 +14,11 @@ All notable changes to NN-Lite are documented in this file.
   mode is on or the compiler is running; it does not change the phone's settings.
 
 ### Fixed
+- Checkpoints must match their model exactly. LEMUR checkpoints were loaded with
+  `strict=False`, so a weight missing from the checkpoint, or one the model does not have, was
+  ignored and the model was benchmarked with that layer at its initial values. Such a model now
+  fails with a message naming the keys that differ. Models given with `--model-path` are checked
+  the same way.
 - `device_analytics` lists every core of the phone. It listed only the first four, which on
   a phone with four slow and four fast cores are the slow ones, while `benchmark_model` runs
   on the fast ones. Its summary (`arm_architecture`) now describes the core `benchmark_model`

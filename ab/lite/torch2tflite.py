@@ -65,7 +65,7 @@ try:
     from ab.lite.preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from ab.lite.progress import progress_file, load_progress, save_progress
     from ab.lite.sources import find_checkout, CheckoutSource, PackageSource
-    from ab.lite.local_models import find_models, load_local_model, calibration_set, default_transform
+    from ab.lite.local_models import find_models, load_local_model, calibration_set, default_transform, load_weights
     from ab.lite import adb
     from ab.lite.locks import downloading, claim
     from ab.lite.options import parser, restart_args
@@ -75,7 +75,7 @@ except ImportError:  # executed as a plain script, e.g. after a session restart
     from preprocess import CIFAR10_NORM, load_transform, calibration_images, input_size
     from progress import progress_file, load_progress, save_progress
     from sources import find_checkout, CheckoutSource, PackageSource
-    from local_models import find_models, load_local_model, calibration_set, default_transform
+    from local_models import find_models, load_local_model, calibration_set, default_transform, load_weights
     import adb
     from locks import downloading, claim
     from options import parser, restart_args
@@ -386,7 +386,8 @@ def main():
                 # Build the model for the input size it was trained with, as nn-dataset does.
                 model = mod.Net((1,3,target_h,target_h), (10,), prm, "cpu")
                 ckpt = torch.load(pth, map_location="cpu")
-                model.load_state_dict(ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt, strict=False)
+                # A checkpoint that does not match the model fails the model instead of being benchmarked.
+                load_weights(model, ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt)
                 model.eval()
                 shape = (1, 3, target_h, target_h)
 
