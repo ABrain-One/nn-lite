@@ -93,7 +93,10 @@ writes the results.
    It should be listed with the state `device` (not `unauthorized`). With several phones
    connected, see [Several phones](#several-phones).
 
-Keep the phone charging during long runs. NN-Lite keeps the screen awake and copies the
+Keep the phone charging during long runs, and turn Battery Saver off: it lowers the CPU frequency.
+Android also compiles apps in the background (dex2oat) while a phone is idle and charging, which
+slows measurements down; NN-Lite warns about both, records them in each result, and leaves the
+settings to you. NN-Lite keeps the screen awake and copies the
 `benchmark_model` binary to `/data/local/tmp` on the phone automatically.
 
 ## Quick start

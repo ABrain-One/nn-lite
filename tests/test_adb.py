@@ -130,3 +130,55 @@ def test_cpu_info_without_hardware_line_or_cores():
 @pytest.mark.parametrize("mask, core", [("f0", 4), ("c0", 6), ("fe", 1), ("1", 0), (None, None), ("0", None)])
 def test_first_core_of_a_taskset_mask(mask, core):
     assert adb.first_core(mask) == core
+
+
+# Output of DEVICE_STATE_COMMAND on a phone with Battery Saver on, its fast cores held at a low
+# frequency, and the Android compiler running in the background. Core 7 is switched off.
+SAVER_ON_STATE = """\
+power_save_mode true
+low_power 1
+miui_power_save null null
+core 0 schedutil 1742000 1742000
+core 4 schedutil 936000 2314000
+core 7
+compiler_threads 5
+"""
+
+
+def test_device_state_reads_battery_saver_frequencies_and_compiler():
+    state = adb.device_state(SAVER_ON_STATE)
+    assert state["battery_saver"] is True and state["compiler_threads"] == 5
+    assert state["cores"]["4"] == {"governor": "schedutil", "cur_freq_khz": 936000, "max_freq_khz": 2314000}
+    assert state["cores"]["7"] == {"governor": None, "cur_freq_khz": None, "max_freq_khz": None}
+    assert len(adb.state_warnings(state)) == 2
+
+
+def test_battery_saver_of_a_xiaomi_phone():
+    # MIUI leaves the standard setting at 0 and uses its own settings, as on a Poco F3.
+    on = "power_save_mode true\nlow_power 0\nmiui_power_save 1 0\n"
+    ultra = "power_save_mode \nlow_power 0\nmiui_power_save 1 1\n"
+    off = "power_save_mode false\nlow_power 0\nmiui_power_save 0 0\n"
+    assert adb.device_state(on)["battery_saver"] is True
+    assert adb.device_state(ultra)["battery_saver"] is True
+    assert adb.device_state(off)["battery_saver"] is False
+
+
+def test_power_modes_of_a_huawei_phone():
+    # EMUI on a Y9 Prime: the standard setting stays 0; the power mode and Ultra flag change.
+    def state(mode, ultra=""):
+        return adb.device_state(f"low_power 0\nmiui_power_save null null\nemui_power_mode {mode} {ultra}\n")
+    assert (state(1)["battery_saver"], state(1)["performance_mode"]) == (False, False)  # normal
+    assert (state(4)["battery_saver"], state(4)["performance_mode"]) == (True, False)   # power saving
+    assert (state(5)["battery_saver"], state(5)["performance_mode"]) == (False, True)   # performance
+    assert state(1, "true")["battery_saver"] is True                                    # Ultra power saving
+    assert len(adb.state_warnings(state(5))) == 1
+
+
+def test_device_state_without_problems_or_values():
+    quiet = adb.device_state("low_power 0\ncore 0 schedutil 1800000 1800000\ncompiler_threads 0\n")
+    assert quiet["battery_saver"] is False and adb.state_warnings(quiet) == []
+    # "settings" may print "null", and a value may be missing: unknown, not a warning.
+    unknown = adb.device_state("power_save_mode \nlow_power null\nmiui_power_save null null\n"
+                               "emui_power_mode null \ncompiler_threads \n")
+    assert unknown == {"battery_saver": None, "performance_mode": None, "compiler_threads": None, "cores": {}}
+    assert adb.state_warnings(unknown) == []

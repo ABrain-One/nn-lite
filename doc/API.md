@@ -174,7 +174,7 @@ the schema.
 | `gpu_*`, `npu_*` | | The same four fields for the GPU and NPU backends. |
 | `total_ram_kb`, `free_ram_kb`, `available_ram_kb`, `cached_kb` | int | Phone memory state at measurement time. |
 | `in_dim_0` … `in_dim_3` | int | Input shape as batch, height, width, channels. |
-| `device_analytics` | object | `cpu_info`: the core count, every core as listed in `/proc/cpuinfo` (`processors`), and `arm_architecture`, a summary with the SoC string and the CPU implementer/architecture/variant/part/revision and features of the core `benchmark_model` runs on (the first core of its `taskset` mask, or the first core). |
+| `device_analytics` | object | `cpu_info`: the core count, every core as listed in `/proc/cpuinfo` (`processors`), and `arm_architecture`, a summary with the SoC string and the CPU implementer/architecture/variant/part/revision and features of the core `benchmark_model` runs on (the first core of its `taskset` mask, or the first core). `device_state`, read just before the model is benchmarked: `battery_saver` (`true` if Android's power manager, the standard setting or MIUI's Battery Saver or Ultra Battery Saver setting, or EMUI's power saving or Ultra power saving mode says it is on, `false` if those that answer say it is off, `null` if none answers), `performance_mode` (`true` or `false` on phones that report it, currently Huawei/EMUI, otherwise `null`), per core the frequency `governor`, the maximum allowed frequency (`max_freq_khz`) and the current frequency (`cur_freq_khz`, read while the phone is idle, so it is usually low and does not show the speed during the measurement), and `compiler_threads`, the number of threads of the Android compiler (dex2oat) running in the background. NN-Lite prints a warning when Battery Saver or performance mode is on or the compiler is running. |
 | `cpu_runs`, `gpu_runs`, `npu_runs` | int | Timed runs actually performed per backend, as reported by `benchmark_model`; `0` for a failed backend. Absent when `valid` is `false`. Added in 1.0.1. |
 | `cpu_error`, `gpu_error`, `npu_error` | string | Present only for a backend that failed; up to three extracted error lines, truncated to 500 characters. |
 
@@ -351,6 +351,8 @@ if given, otherwise the only phone in state `device`; raises `ValueError`
 otherwise.
 **`core_speeds(output) -> dict`**: `{core: maximum frequency in kHz}` from the
 output of `CORE_SPEEDS_COMMAND` run on the phone.
+**`device_state(output) -> dict`**: the `device_state` of a record from the output of
+`DEVICE_STATE_COMMAND` run on the phone; **`state_warnings(state) -> list`** the warnings for it.
 **`first_core(mask) -> int | None`**: the lowest core in a `taskset` mask.
 **`cpu_info(output, soc="", core=None) -> dict`**: the `cpu_info` of a record from the output of
 `cat /proc/cpuinfo`, with every core and a summary of core `core` (or the first core).
