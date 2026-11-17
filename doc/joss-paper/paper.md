@@ -41,11 +41,11 @@ NN-Lite automates the deployment and measurement of user-supplied PyTorch vision
 
 Research on efficient deep learning (hardware-aware architecture search, quantization, latency prediction, model compression) requires measurements across many architectures and real devices, because an emulator does not reproduce the vendor-specific GPU and NPU software stack of a phone. Some operators are not supported [@Ignatov2019AIBenchmark; @Almeida2021SmartAtWhatCost]. On a real device, the same model can succeed with one accelerator and be rejected by another.
 
-NN-Lite, which evolved from the pipeline that produced the latency dataset of @Din2026NNLite, serves researchers who need reproducible latency and feasibility measurements, specific to a device and to an accelerator configuration. This paper documents release 1.0.1, its design and tests, and its changes with respect to the campaign pipeline. Five of the changes listed in the changelog matter most.
+NN-Lite, which evolved from the pipeline that produced the latency dataset of @Din2026NNLite, serves researchers who need reproducible latency and feasibility measurements, specific to a device and to an accelerator configuration. This paper documents release 1.0.2, its design and tests, and its changes with respect to the campaign pipeline. Five of the changes listed in the changelog matter most.
 
 **User-supplied vision models.** The campaign pipeline operated only on the collection it was written for. A file is now also accepted: a program exported with `torch.export`, which retains its input shape, or a Python module with a checkpoint or the saved model. Each model must have a single four-dimensional (NCHW) image input. Correct preprocessing for INT8 calibration remains the user's responsibility.
 
-**Packaged installation.** The dependence on nightly builds that were later withdrawn from the Python Package Index made the campaign impossible to reproduce. Release 1.0.1 fixes the exact versions of its dependencies, all of which are published on the Python Package Index, is installed under the name `nn-lit`, and its console command is `nn-lite-bench`. Linux and Apple Silicon are supported.
+**Packaged installation.** The dependence on nightly builds that were later withdrawn from the Python Package Index made the campaign impossible to reproduce. Release 1.0.2 fixes the exact versions of its dependencies, all of which are published on the Python Package Index, is installed under the name `nn-lit`, and its console command is `nn-lite-bench`. Linux and Apple Silicon are supported.
 
 **Measurements attributable to the intended model.** Models are now built at their training resolution, not at a fixed size. The VisionTransformer configuration of the collection, for example, loads its weights only at its training resolution of 299×299. Verifying each transfer to the phone keeps a stale file from being timed. CPU timing uses the built-in LiteRT kernels with XNNPACK disabled (`--use_xnnpack=false`), as in the campaign.
 
@@ -79,7 +79,7 @@ Two limitations have to be mentioned. NN-Lite reports wall-clock latency and doe
 
 NN-Lite is the on-device measurement component of the LEMUR ecosystem [@Goodarzi2025LEMUR]. Inference latency measurements for more than 7,500 models in LEMUR 2 [@Uzun2026LEMUR2] were provided by the emulator execution path of NN-Lite. The physical device path produced the delegate-resolved latency dataset reported in @Din2026NNLite, which covers 586 architectures across five commodity phones from three chip vendors. All records of this dataset are publicly available. They have also been used to fit device-specific latency models by symbolic regression [@Dhanani2026Symbolic] and to show that FLOPs predict latency poorly if the backend is not taken into account [@Din2026BMVC].
 
-Release 1.0.1 is on the Python Package Index as `nn-lit`, with the source in the project repository. Unit tests cover the release and run in continuous integration on three Python versions. We verified both model sources end to end on a phone, including a model outside the collection (torchvision MobileNetV3).
+Release 1.0.2 is on the Python Package Index as `nn-lit`, with the source in the project repository. Unit tests cover the release and run in continuous integration on three Python versions. We verified both model sources end to end on a phone, including a model outside the collection (torchvision MobileNetV3).
 
 # AI usage disclosure
 
