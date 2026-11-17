@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "NN-Lite: Automated Benchmarking of PyTorch Models on Android Devices"
+abstract: "NN-Lite automates the deployment and latency measurement of PyTorch vision models on physical Android devices. It converts models to LiteRT at FP32 and INT8 precision, times them on the CPU, GPU delegate and NNAPI configurations with the official benchmark_model tool, and writes one structured record per model, precision and device. Runs are unattended and resumable."
+type: software
+authors:
+  - given-names: Dmitry
+    family-names: Ignatov
+    orcid: "https://orcid.org/0000-0002-6339-1200"
+    affiliation: "Computer Vision Lab, CAIDAS & IFI, University of Würzburg, Germany"
+  - given-names: Faraz
+    family-names: Kayani
+    orcid: "https://orcid.org/0009-0000-7769-6016"
+    affiliation: "Computer Vision Lab, CAIDAS & IFI, University of Würzburg, Germany"
+  - given-names: Sarmad
+    family-names: Kayani
+    orcid: "https://orcid.org/0009-0003-4156-4291"
+    affiliation: "Computer Vision Lab, CAIDAS & IFI, University of Würzburg, Germany"
+  - given-names: Radu
+    family-names: Timofte
+    orcid: "https://orcid.org/0000-0002-1478-0402"
+    affiliation: "Computer Vision Lab, CAIDAS & IFI, University of Würzburg, Germany"
+repository-code: "https://github.com/ABrain-One/nn-lite"
+url: "https://ABrain.one"
+license: MIT
+version: 1.0.2
+date-released: 2026-11-17
+keywords:
+  - Python
+  - Android
+  - deep learning
+  - edge AI
+  - on-device inference
+  - quantization
+  - benchmarking
+  - LiteRT
